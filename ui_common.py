@@ -50,8 +50,9 @@ def show_reschedule_dialog(parent, on_apply) -> None:
         pass
     dlg.set_modal(True)
     dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
-    dlg.add_button("Apply", Gtk.ResponseType.APPLY)
+    dlg.add_button("Save", Gtk.ResponseType.APPLY)
     dlg.set_default_response(Gtk.ResponseType.APPLY)
+    dlg.set_default_size(360, -1)
     try:
         area = dlg.get_content_area()
     except Exception:
@@ -62,6 +63,7 @@ def show_reschedule_dialog(parent, on_apply) -> None:
     body.set_margin_bottom(12)
     body.set_margin_start(12)
     body.set_margin_end(12)
+    body.set_size_request(320, -1)
 
     cal = Gtk.Calendar()
     body.append(cal)
