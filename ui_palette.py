@@ -44,8 +44,10 @@ def _is_overdue(task) -> bool:
         return False
 
 
-def _meta_label(task) -> str:
+def _meta_label(task, project: str = "") -> str:
     parts: list[str] = []
+    if project:
+        parts.append(project)
     due = getattr(task, "due_date", None)
     if _is_overdue(task):
         parts.append("overdue")
@@ -393,6 +395,15 @@ class PaletteWindow(Gtk.Window):
                     content = ""
                 if query in content:
                     matches.append(task)
+                    continue
+                try:
+                    project = self._store.project_name(
+                        str(getattr(task, "project_id", "") or "")
+                    ).lower()
+                except Exception:
+                    project = ""
+                if query in project:
+                    matches.append(task)
         self._clear_list()
         if not matches:
             if self._candidates:
@@ -443,7 +454,13 @@ class PaletteWindow(Gtk.Window):
         content.set_wrap(True)
         box.append(content)
 
-        meta = _meta_label(task)
+        try:
+            project = self._store.project_name(
+                str(getattr(task, "project_id", "") or "")
+            )
+        except Exception:
+            project = ""
+        meta = _meta_label(task, project)
         if meta:
             meta_label = Gtk.Label(label=meta)
             meta_label.add_css_class("dim-label")

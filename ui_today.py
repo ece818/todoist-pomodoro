@@ -41,8 +41,10 @@ def _is_overdue(task: Task) -> bool:
         return False
 
 
-def _meta_label(task: Task) -> str:
+def _meta_label(task: Task, project: str = "") -> str:
     parts: list[str] = []
+    if project:
+        parts.append(project)
     if _is_overdue(task):
         parts.append("overdue")
     priority = getattr(task, "priority", 1) or 1
@@ -70,6 +72,8 @@ class TodayPanel(Gtk.Box):
         self._on_task_selected = on_task_selected
         self._rows: dict[str, Gtk.ListBoxRow] = {}
         self._auth_failed = False
+        self._project_ids: list[str] = [""]  # "" == all projects
+        self._syncing_projects = False
 
         self.set_margin_top(12)
         self.set_margin_bottom(12)
@@ -97,10 +101,17 @@ class TodayPanel(Gtk.Box):
         title.set_xalign(0.0)
         title.set_hexpand(True)
         toolbar.append(title)
+        self._project_dropdown = Gtk.DropDown()
+        self._project_dropdown.set_tooltip_text("Show tasks from one project")
+        toolbar.append(self._project_dropdown)
         self._refresh_button = Gtk.Button(label="Refresh")
         self._refresh_button.connect("clicked", self._on_refresh_clicked)
         toolbar.append(self._refresh_button)
         self.append(toolbar)
+        self._rebuild_project_model(0)
+        self._project_dropdown.connect(
+            "notify::selected", self._on_project_selected
+        )
 
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
@@ -186,10 +197,57 @@ class TodayPanel(Gtk.Box):
 
     def _on_tasks_loaded(self, tasks: list[Task]) -> bool:
         self._refresh_button.set_sensitive(True)
+        self._refresh_project_model()
         self._rebuild(tasks)
         self._set_status("" if tasks else "Nothing due — enjoy the calm.")
         return False
 
+    # -- project filter ------------------------------------------------
+
+    def _refresh_project_model(self) -> None:
+        """Rebuild the project drop-down from the store's cached projects."""
+        try:
+            pairs = self._store.projects()
+        except Exception:
+            pairs = []
+        current = (
+            self._project_ids[self._project_dropdown.get_selected()]
+            if 0 <= self._project_dropdown.get_selected() < len(self._project_ids)
+            else ""
+        )
+        self._project_ids = [""] + [pid for pid, _name in pairs]
+        labels = ["All projects"] + [name for _pid, name in pairs]
+        self._syncing_projects = True
+        try:
+            self._project_dropdown.set_model(Gtk.StringList.new(labels))
+            self._project_dropdown.set_selected(
+                self._project_ids.index(current)
+                if current in self._project_ids
+                else 0
+            )
+        finally:
+            self._syncing_projects = False
+
+    def _rebuild_project_model(self, selected: int) -> None:
+        self._syncing_projects = True
+        try:
+            self._project_dropdown.set_model(
+                Gtk.StringList.new(["All projects"])
+            )
+            self._project_dropdown.set_selected(selected)
+        finally:
+            self._syncing_projects = False
+
+    def _on_project_selected(self, dropdown: Gtk.DropDown, _pspec) -> None:
+        if self._syncing_projects:
+            return
+        self._apply_filter()
+
+    def _selected_project_id(self) -> str:
+        index = self._project_dropdown.get_selected()
+        if 0 <= index < len(self._project_ids):
+            return self._project_ids[index]
+        return ""
     def _on_load_failed(self, message: str) -> bool:
         self._refresh_button.set_sensitive(True)
         self._set_status(f"Could not load tasks: {message}")
@@ -231,25 +289,31 @@ class TodayPanel(Gtk.Box):
         self._apply_filter()
 
     def _apply_filter(self) -> None:
-        """Show only rows whose task.content contains the filter text.
+        """Show only rows matching the text filter AND project filter.
 
         Client-side only: operates on already-loaded rows, no network.
         Clearing the search restores all rows. Rows without a task
         (e.g. pending rows) always stay visible.
         """
         query = self._search.get_text().strip().lower()
+        project_id = self._selected_project_id()
         child = self._list.get_first_child()
         while child is not None:
             nxt = child.get_next_sibling()
             task = getattr(child, "_task", None)
-            if task is None or not query:
+            if task is None:
                 child.set_visible(True)
             else:
-                try:
-                    content = str(task.content).lower()
-                except Exception:
-                    content = ""
-                child.set_visible(query in content)
+                visible = True
+                if query:
+                    try:
+                        content = str(task.content).lower()
+                    except Exception:
+                        content = ""
+                    visible = query in content
+                if visible and project_id:
+                    visible = str(getattr(task, "project_id", "") or "") == project_id
+                child.set_visible(visible)
             child = nxt
 
     def _on_add_clicked(self, _button: Gtk.Button) -> None:
@@ -320,7 +384,13 @@ class TodayPanel(Gtk.Box):
         content.set_wrap(True)
         box.append(content)
 
-        meta = _meta_label(task)
+        try:
+            project = self._store.project_name(
+                str(getattr(task, "project_id", "") or "")
+            )
+        except Exception:
+            project = ""
+        meta = _meta_label(task, project)
         if meta:
             meta_label = Gtk.Label(label=meta)
             meta_label.add_css_class("dim-label")

@@ -377,7 +377,7 @@ def test_search_on_empty_cache_triggers_fetch():
     assert store._all_tasks == []
     results = store.search("read")
     assert [t.id for t in results] == ["a1"]
-    assert len(stub.get_calls) == 1
+    assert len(stub.get_calls) == 2  # tasks fetch + projects enrichment
     assert [t.id for t in store._all_tasks] == ["a1"]
 
 
@@ -508,3 +508,43 @@ def test_search_honors_active_filter():
     assert [t.id for t in results] == ["f1"]
     assert any(c.startswith("tasks_by_filter") for c in calls)
     assert "list_all" not in calls
+
+
+def test_list_projects_parses_and_skips_blanks():
+    stub = StubSession()
+    stub.get_handler = lambda *a: Resp(
+        200,
+        {
+            "results": [
+                {"id": "p1", "name": "Work"},
+                {"id": "p2", "name": "Personal"},
+                {"id": "", "name": "NoId"},
+                {"id": "p3", "name": "  "},
+            ]
+        },
+    )
+    client = TodoistClient("tok", session=stub)
+    projects = client.list_projects()
+    assert [(p.id, p.name) for p in projects] == [("p1", "Work"), ("p2", "Personal")]
+    assert "/projects" in stub.get_calls[0]["url"]
+
+
+def test_project_name_mapping_and_search_matches_project():
+    stub = StubSession()
+    stub.get_handler = lambda *a: Resp(
+        200, {"results": [{"id": "w1", "name": "Work"}]}
+    )
+    stub.post_handler = None
+    client = TodoistClient("tok", session=stub)
+    store = SyncStore(client)
+    store._projects = {"w1": "Work"}
+    assert store.project_name("w1") == "Work"
+    assert store.project_name("nope") == ""
+    assert [pid for pid, _ in store.projects()] == ["w1"]
+    # search matches project name as well as content
+    store._all_tasks = [
+        Task(id="t1", content="write report", project_id="w1"),
+        Task(id="t2", content="buy milk", project_id=""),
+    ]
+    ids = [t.id for t in store.search("work")]
+    assert ids == ["t1"]

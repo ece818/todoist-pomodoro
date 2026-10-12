@@ -95,6 +95,11 @@ class PomodoroApp(Adw.Application):
         )
         shortcut_controller = Gtk.ShortcutController()
         shortcut_controller.add_shortcut(palette_shortcut)
+        quit_shortcut = Gtk.Shortcut.new(
+            trigger=Gtk.ShortcutTrigger.parse_string("<Control>q"),
+            action=Gtk.CallbackAction.new(self._on_quit_shortcut),
+        )
+        shortcut_controller.add_shortcut(quit_shortcut)
         win.add_controller(shortcut_controller)
 
         win.present()
@@ -114,6 +119,10 @@ class PomodoroApp(Adw.Application):
     def _open_task(self, task) -> None:
         # Palette pick: same as selecting a task from the Today list.
         self._on_task_selected(task)
+
+    def _on_quit_shortcut(self, _widget, _args) -> bool:
+        self.quit()
+        return True
 
     def _on_palette_shortcut(self, _widget, _args) -> bool:
         palette = PaletteWindow(

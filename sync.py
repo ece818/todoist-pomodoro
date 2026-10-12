@@ -96,14 +96,38 @@ class SyncStore:
         self._closing: set[str] = set()
         self._all_tasks: list[Task] = []
         self.active_filter: str | None = None
+        self._projects: dict[str, str] = {}  # project_id -> name
+
+    # -- projects -----------------------------------------------------
+    def refresh_projects(self) -> dict[str, str]:
+        """Fetch all projects; cache id->name. Propagates client errors."""
+        self._projects = {p.id: p.name for p in self.client.list_projects()}
+        return self._projects
+
+    def projects(self) -> list[tuple[str, str]]:
+        """Cached (id, name) pairs sorted by name; empty when never loaded."""
+        return sorted(self._projects.items(), key=lambda kv: kv[1].lower())
+
+    def project_name(self, project_id: str) -> str:
+        return self._projects.get(str(project_id or ""), "")
+
+    def _refresh_projects_quietly(self) -> None:
+        """Project names are enrichment: never break the main flow."""
+        try:
+            self.refresh_projects()
+        except Exception:
+            pass
 
     # -- read ---------------------------------------------------------
     def refresh_today(self) -> list[Task]:
-        return self.client.list_today()
+        tasks = self.client.list_today()
+        self._refresh_projects_quietly()
+        return tasks
 
     def refresh_all(self) -> list[Task]:
         tasks = self.client.list_all()
         self._all_tasks = list(tasks)
+        self._refresh_projects_quietly()
         return self._all_tasks
 
     def set_filter(self, query: str | None) -> None:
@@ -116,8 +140,11 @@ class SyncStore:
 
     def candidates(self) -> list[Task]:
         if self.active_filter:
-            return self.client.tasks_by_filter(self.active_filter)
-        return self.refresh_all()
+            tasks = self.client.tasks_by_filter(self.active_filter)
+        else:
+            tasks = self.refresh_all()
+        self._refresh_projects_quietly()
+        return tasks
 
     def search(self, query: str) -> list[Task]:
         if not query or not query.strip():
@@ -128,9 +155,16 @@ class SyncStore:
             if not self._all_tasks:
                 # Propagate any client exceptions to the caller.
                 self.refresh_all()
+            else:
+                self._refresh_projects_quietly()
             pool = self._all_tasks
         needle = query.strip().lower()
-        matched = [t for t in pool if needle in t.content.lower()]
+        matched = [
+            t
+            for t in pool
+            if needle in t.content.lower()
+            or needle in self.project_name(t.project_id).lower()
+        ]
         dated = [t for t in matched if t.due_date is not None]
         dateless = [t for t in matched if t.due_date is None]
         dated.sort(key=lambda t: (t.due_date, -t.priority))  # type: ignore[union-attr]

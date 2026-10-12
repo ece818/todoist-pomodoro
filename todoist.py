@@ -39,6 +39,13 @@ class Task:
     due_date: date | None = None
     priority: int = 1
     is_recurring: bool = False
+    project_id: str = ""
+
+
+@dataclass
+class Project:
+    id: str  # opaque string, never int
+    name: str
 
 
 class _Response(Protocol):
@@ -67,6 +74,7 @@ def _parse_task(payload: dict[str, Any]) -> Task:
         due_date=due_date,
         priority=int(payload.get("priority", 1) or 1),
         is_recurring=is_recurring,
+        project_id=str(payload.get("project_id", "") or ""),
     )
 
 
@@ -157,21 +165,23 @@ class TodoistClient:
             raise TodoistNetworkError(f"Network error POST {path}: {exc}") from exc
         return resp
 
-    def _fetch_all_tasks(self) -> list[dict[str, Any]]:
-        """GET /tasks paging through ALL pages; return raw payload dicts."""
+    def _fetch_paged(
+        self, path: str, params: dict[str, Any], context: str
+    ) -> list[dict[str, Any]]:
+        """GET a cursor-paginated endpoint; return raw payload dicts."""
         collected: list[dict[str, Any]] = []
         cursor: str | None = None
         # Hard cap: a misbehaving pager echoing cursors must not loop forever.
         for _page in range(50):
-            params: dict[str, Any] = {"limit": 200}
+            page_params = dict(params)
             if cursor:
-                params["cursor"] = cursor
-            resp = self._get("/tasks", params=params)
-            self._raise_for_status(resp, "list tasks")
+                page_params["cursor"] = cursor
+            resp = self._get(path, params=page_params)
+            self._raise_for_status(resp, context)
             try:
                 payload = resp.json()
             except (ValueError, AttributeError) as exc:
-                raise TodoistError(f"Invalid JSON in list tasks: {exc}") from exc
+                raise TodoistError(f"Invalid JSON in {context}: {exc}") from exc
             if isinstance(payload, dict):
                 items = payload.get("results", payload.get("tasks", payload.get("data", [])))
                 next_cursor = payload.get("next_cursor")
@@ -179,13 +189,28 @@ class TodoistClient:
                 items = payload
                 next_cursor = None
             else:
-                raise TodoistError("Unexpected list tasks payload")
+                raise TodoistError(f"Unexpected {context} payload")
             if isinstance(items, list):
                 collected.extend(i for i in items if isinstance(i, dict))
             if not next_cursor:
                 break
             cursor = str(next_cursor)
         return collected
+
+    def _fetch_all_tasks(self) -> list[dict[str, Any]]:
+        """GET /tasks paging through ALL pages; return raw payload dicts."""
+        return self._fetch_paged("/tasks", {"limit": 200}, "list tasks")
+
+    def list_projects(self) -> list[Project]:
+        """GET /projects (all pages); API order."""
+        raw = self._fetch_paged("/projects", {"limit": 200}, "list projects")
+        projects = []
+        for item in raw:
+            pid = str(item.get("id", "") or "")
+            name = str(item.get("name", "") or "").strip()
+            if pid and name:
+                projects.append(Project(id=pid, name=name))
+        return projects
 
     def list_today(self) -> list[Task]:
         """GET /tasks paging through ALL pages; filter due_date <= today.
