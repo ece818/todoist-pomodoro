@@ -331,3 +331,11 @@ class TodoistClient:
             return None
         self._raise_for_status(resp, "close task")
         return None
+
+    def reopen_task(self, task_id: str) -> None:
+        """POST /tasks/{id}/reopen, expect 204 (undo a close)."""
+        resp = self._post(f"/tasks/{task_id}/reopen")
+        if resp.status_code == 204:
+            return None
+        self._raise_for_status(resp, "reopen task")
+        return None

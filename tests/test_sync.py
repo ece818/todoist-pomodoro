@@ -702,3 +702,35 @@ def test_reschedule_blank_raises_value_error():
     store = SyncStore(client)
     with pytest.raises(ValueError):
         store.reschedule(Task(id="t1", content="T"), "  ")
+
+
+def test_reopen_posts_and_returns_none():
+    stub = StubSession()
+    seen = {}
+
+    def post(url, headers, payload, timeout):
+        seen["url"] = url
+        return Resp(204, None)
+
+    stub.post_handler = post
+    client = TodoistClient("tok", session=stub)
+    assert client.reopen_task("abc") is None
+    assert seen["url"].endswith("/tasks/abc/reopen")
+
+
+def test_reopen_errors_map():
+    stub = StubSession()
+    stub.post_handler = lambda *a: Resp(401, {})
+    with pytest.raises(TodoistAuthError):
+        TodoistClient("tok", session=stub).reopen_task("x")
+    stub.post_handler = lambda *a: Resp(500, {})
+    with pytest.raises(TodoistNetworkError):
+        TodoistClient("tok", session=stub).reopen_task("x")
+
+
+def test_store_reopen_releases_guard():
+    stub = StubSession()
+    stub.post_handler = lambda *a: Resp(204, None)
+    store = SyncStore(TodoistClient("tok", session=stub))
+    assert store.reopen(Task(id="t1", content="T")) is None
+    assert "t1" not in store._closing

@@ -270,6 +270,18 @@ class SyncStore:
         finally:
             self._closing.discard(task_id)
 
+    def reopen(self, task: Task) -> None:
+        """Undo a close: reopen the task server-side. Propagates errors."""
+        task_id = str(task.id)
+        if task_id in self._closing:
+            raise RuntimeError(f"Close already in-flight for task {task_id}")
+        self._closing.add(task_id)
+        try:
+            self.client.reopen_task(task_id)
+            return None
+        finally:
+            self._closing.discard(task_id)
+
     # -- persistence --------------------------------------------------
     def _persist_quietly(self) -> None:
         """Best-effort save; persistence must never break the core flow."""

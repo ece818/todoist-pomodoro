@@ -27,6 +27,9 @@ class TaskActions:
     def complete(self, task: Task) -> None:
         self.store.close(task)
 
+    def reopen(self, task: Task) -> None:
+        self.store.reopen(task)
+
     def reschedule(self, task: Task, due_string: str) -> Task:
         if not due_string or not due_string.strip():
             raise ValueError("due_string must not be blank")

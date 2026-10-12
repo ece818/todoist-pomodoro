@@ -1,9 +1,10 @@
-"""Application entry point: Today -> Timer -> Celebration wiring."""
+"""Application entry point: Today -> Timer wiring + bottom banner."""
 
 from __future__ import annotations
 
 import os
 import sys
+import threading
 from pathlib import Path
 
 try:
@@ -31,8 +32,7 @@ from config import (
 )
 from sessions import SessionStore
 from sync import FilterStore, SyncStore
-from todoist import TodoistClient
-from ui_celebrate import CelebrationWindow
+from todoist import TodoistAuthError, TodoistClient, TodoistError
 from ui_common import add_close_shortcuts
 
 try:
@@ -148,7 +148,33 @@ class PomodoroApp(Adw.Application):
         header.pack_end(settings_button)
         toolbar_view.add_top_bar(header)
         toolbar_view.set_content(self._stack)
-        win.set_content(toolbar_view)
+
+        # Bottom banner (revealer): completion confirm + Undo, auto-hides.
+        overlay = Gtk.Overlay()
+        overlay.set_child(toolbar_view)
+        self._banner = Gtk.Revealer()
+        self._banner.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+        self._banner.set_reveal_child(False)
+        self._banner.set_halign(Gtk.Align.CENTER)
+        self._banner.set_valign(Gtk.Align.END)
+        self._banner.set_margin_bottom(16)
+        banner_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        banner_box.add_css_class("card")
+        banner_box.set_margin_top(10)
+        banner_box.set_margin_bottom(10)
+        banner_box.set_margin_start(16)
+        banner_box.set_margin_end(16)
+        self._banner_label = Gtk.Label(label="")
+        banner_box.append(self._banner_label)
+        self._banner_undo = Gtk.Button(label="Undo")
+        self._banner_undo.connect("clicked", self._on_banner_undo)
+        banner_box.append(self._banner_undo)
+        self._banner.set_child(banner_box)
+        overlay.add_overlay(self._banner)
+        self._banner_task = None
+        self._banner_timer: int | None = None
+
+        win.set_content(overlay)
         add_close_shortcuts(win)
 
         palette_shortcut = Gtk.Shortcut.new(
@@ -349,15 +375,86 @@ class PomodoroApp(Adw.Application):
         return None
 
     def _on_mark_task_done(self, task) -> None:
-        # Explicit user task-done action: open the CelebrationWindow whose
-        # on_complete closes the task in Todoist via the sync store.
-        def do_close(t) -> None:
-            self._store.close(t)
+        # Explicit user task-done action: close now, confirm via the
+        # bottom banner with Undo (no modal popup).
+        threading.Thread(
+            target=self._complete_worker, args=(task,), daemon=True
+        ).start()
 
-        celebration = CelebrationWindow(task, on_complete=do_close)
-        celebration.set_transient_for(self.get_active_window())
-        celebration.set_modal(True)
-        celebration.present()
+    def _complete_worker(self, task) -> None:
+        try:
+            self._store.close(task)
+        except TodoistAuthError:
+            GLib.idle_add(
+                self._show_banner, "Token invalid — update .env and restart.",
+                None, False,
+            )
+        except TodoistError as exc:
+            GLib.idle_add(
+                self._show_banner, f"Could not complete: {exc}", None, False
+            )
+        except Exception as exc:
+            GLib.idle_add(
+                self._show_banner, f"Could not complete: {exc}", None, False
+            )
+        else:
+            content = str(getattr(task, "content", "") or "Task")
+            GLib.idle_add(
+                self._show_banner, f"Completed: {content}", task, True
+            )
+
+    def _show_banner(
+        self, text: str, task=None, undoable: bool = False, seconds: int = 5
+    ) -> bool:
+        """Show the bottom banner; auto-hide after ``seconds``."""
+        if self._banner_timer is not None:
+            try:
+                GLib.source_remove(self._banner_timer)
+            except Exception:
+                pass
+            self._banner_timer = None
+        self._banner_label.set_text(text)
+        self._banner_task = task if undoable else None
+        self._banner_undo.set_visible(undoable)
+        self._banner.set_reveal_child(True)
+        self._banner_timer = GLib.timeout_add_seconds(
+            seconds, self._hide_banner
+        )
+        return False
+
+    def _hide_banner(self) -> bool:
+        self._banner.set_reveal_child(False)
+        self._banner_task = None
+        self._banner_timer = None
+        return False
+
+    def _on_banner_undo(self, _button: Gtk.Button) -> None:
+        task = self._banner_task
+        if task is None:
+            return
+        if self._banner_timer is not None:
+            try:
+                GLib.source_remove(self._banner_timer)
+            except Exception:
+                pass
+            self._banner_timer = None
+        self._banner.set_reveal_child(False)
+        self._banner_task = None
+        threading.Thread(
+            target=self._reopen_worker, args=(task,), daemon=True
+        ).start()
+
+    def _reopen_worker(self, task) -> None:
+        try:
+            self._store.reopen(task)
+        except Exception as exc:
+            GLib.idle_add(
+                self._show_banner, f"Could not undo: {exc}", None, False
+            )
+        else:
+            GLib.idle_add(
+                self._show_banner, "Task restored.", None, False, 3
+            )
 
 
 def main(argv: list[str] | None = None) -> int:
