@@ -404,7 +404,12 @@ class PomodoroApp(Adw.Application):
             GLib.idle_add(self._on_completed, task_id, f"Completed: {content}", task)
 
     def _on_completed(self, task_id: str, banner_text: str, task) -> bool:
-        """Completion succeeded: stop a timer bound to it + confirm."""
+        """Completion succeeded: drop the row, stop a bound timer, confirm."""
+        try:
+            if self._today_panel is not None:
+                self._today_panel.remove_task_row(task_id)
+        except Exception:
+            pass
         self._stop_timer_for(task_id)
         self._show_banner(banner_text, task, True)
         return False
@@ -467,9 +472,17 @@ class PomodoroApp(Adw.Application):
                 self._show_banner, f"Could not undo: {exc}", None, False
             )
         else:
-            GLib.idle_add(
-                self._show_banner, "Task restored.", None, False, 3
-            )
+            GLib.idle_add(self._on_reopened)
+
+    def _on_reopened(self) -> bool:
+        """Undo succeeded: bring the restored task back into the list."""
+        try:
+            if self._today_panel is not None:
+                self._today_panel.refresh()
+        except Exception:
+            pass
+        self._show_banner("Task restored.", None, False, 3)
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:

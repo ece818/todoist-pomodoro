@@ -592,6 +592,20 @@ class TodayPanel(Gtk.Box):
         self._set_status(text)
         return False
 
+    def remove_task_row(self, task_id) -> bool:
+        """Drop one row by task id (banner completion path)."""
+        try:
+            row = self._rows.pop(str(task_id), None) if task_id is not None else None
+            if row is None:
+                return False
+            try:
+                self._list.remove(row)
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
     def _on_complete_done(self, task_id) -> bool:
         row = self._rows.pop(str(task_id), None) if task_id is not None else None
         if row is not None:
