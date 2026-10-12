@@ -44,7 +44,7 @@ def _fmt_clock(total_sec):
     return f"{m:02d}:{s:02d}"
 
 
-def _display(text, limit=44):
+def _display(text, limit=30):
     """Phone-safe display text.
 
     The bundled device font has no color-emoji glyphs (tofu boxes) and
@@ -96,7 +96,7 @@ class StatusBanner(BoxLayout):
         can_undo = task is not None
         self._undo.opacity = 1 if can_undo else 0
         self._undo.disabled = not can_undo
-        self.height = 56
+        self.height = 72
         if self._hide_ev is not None:
             self._hide_ev.cancel()
         self._hide_ev = Clock.schedule_once(lambda _dt: self.hide(), seconds)
@@ -122,16 +122,16 @@ class SetupScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(name="setup", **kwargs)
         box = BoxLayout(orientation="vertical", padding=24, spacing=12)
-        box.add_widget(Label(text="Todoist Pomodoro", font_size=28, size_hint_y=None, height=60))
+        box.add_widget(Label(text="Todoist Pomodoro", font_size=38, size_hint_y=None, height=80))
         box.add_widget(Label(
             text="Paste your Todoist personal API token.\nTodoist > Settings > Integrations > Developer.",
             halign="center"))
         self._entry = TextInput(hint_text="Todoist API token", multiline=False,
-                                password=True, size_hint_y=None, height=48)
+                                password=True, size_hint_y=None, height=64, font_size=20)
         box.add_widget(self._entry)
         self._status = Label(text="", halign="center")
         box.add_widget(self._status)
-        go = Button(text="Connect", size_hint_y=None, height=56,
+        go = Button(text="Connect", font_size=22, size_hint_y=None, height=72,
                       background_normal="", background_color=(0.2, 0.5, 0.9, 1))
         go.bind(on_release=self._on_connect)
         box.add_widget(go)
@@ -160,20 +160,20 @@ class SetupScreen(Screen):
 
 class TaskRow(BoxLayout):
     def __init__(self, task, meta, **kwargs):
-        super().__init__(orientation="horizontal", size_hint_y=None, height=96,
+        super().__init__(orientation="horizontal", size_hint_y=None, height=150,
                          spacing=8, padding=(8, 4), **kwargs)
         self.task = task
-        check = CheckBox(size_hint_x=None, width=56)
+        check = CheckBox(size_hint_x=None, width=72)
         check.bind(active=self._on_check)
         self.add_widget(check)
         mid = BoxLayout(orientation="vertical")
-        mid.add_widget(_left_aligned(_display(task.content), {"font_size": 20}))
+        mid.add_widget(_left_aligned(_display(task.content), {"font_size": 30}))
         if meta:
             mid.add_widget(_left_aligned(
-                _display(meta, 60),
-                {"font_size": 14, "color": (0.6, 0.6, 0.6, 1)}))
+                _display(meta, 40),
+                {"font_size": 16, "color": (0.6, 0.6, 0.6, 1)}))
         self.add_widget(mid)
-        menu = Button(text="···", size_hint_x=None, width=56)
+        menu = Button(text="···", font_size=24, size_hint_x=None, width=72)
         menu.bind(on_release=lambda _b: App.get_running_app().open_task_menu(task))
         self.add_widget(menu)
         self.bind(on_touch_down=self._on_touch)
@@ -193,25 +193,25 @@ class TodayScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(name="today", **kwargs)
         root = BoxLayout(orientation="vertical", padding=8, spacing=8)
-        top = BoxLayout(orientation="horizontal", size_hint_y=None, height=56, spacing=8)
-        top.add_widget(Label(text="Today", font_size=24, size_hint_x=None, width=78,
+        top = BoxLayout(orientation="horizontal", size_hint_y=None, height=72, spacing=8)
+        top.add_widget(Label(text="Today", font_size=30, size_hint_x=None, width=100,
                              halign="left"))
         self._filter = TextInput(hint_text="Filter tasks…", multiline=False)
         self._filter.bind(text=lambda _i, _v: self._apply_filter())
         top.add_widget(self._filter)
-        refresh = Button(text="Refresh", size_hint_x=None, width=92)
+        refresh = Button(text="Refresh", font_size=18, size_hint_x=None, width=120)
         refresh.bind(on_release=lambda _b: self.refresh())
         top.add_widget(refresh)
         root.add_widget(top)
 
-        nav = BoxLayout(orientation="horizontal", size_hint_y=None, height=56, spacing=8)
+        nav = BoxLayout(orientation="horizontal", size_hint_y=None, height=72, spacing=8)
         for label, screen in (("Timer", "timer"), ("Stats", "stats"), ("Settings", "settings")):
-            b = Button(text=label, font_size=17)
+            b = Button(text=label, font_size=22)
             b.bind(on_release=lambda _b, s=screen: self._go(s))
             nav.add_widget(b)
         root.add_widget(nav)
 
-        self._status = Label(text="Loading…", size_hint_y=None, height=24, font_size=13)
+        self._status = Label(text="Loading…", size_hint_y=None, height=32, font_size=16)
         root.add_widget(self._status)
         scroll = ScrollView()
         self._list = GridLayout(cols=1, size_hint_y=None, spacing=2)
@@ -219,11 +219,11 @@ class TodayScreen(Screen):
         scroll.add_widget(self._list)
         root.add_widget(scroll)
 
-        add_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=60, spacing=8)
-        self._add_entry = TextInput(hint_text="Try 'Call mom Mon 2pm…'", multiline=False)
+        add_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=76, spacing=8)
+        self._add_entry = TextInput(hint_text="Try 'Call mom Mon 2pm…'", multiline=False, font_size=18)
         self._add_entry.bind(on_text_validate=lambda _i: self._on_add())
         add_row.add_widget(self._add_entry)
-        add_btn = Button(text="Add", size_hint_x=None, width=100)
+        add_btn = Button(text="Add", font_size=20, size_hint_x=None, width=110)
         add_btn.bind(on_release=lambda _b: self._on_add())
         add_row.add_widget(add_btn)
         root.add_widget(add_row)
@@ -312,23 +312,23 @@ class TimerScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(name="timer", **kwargs)
         root = BoxLayout(orientation="vertical", padding=24, spacing=12)
-        back = Button(text="< Today", size_hint_y=None, height=52)
+        back = Button(text="< Today", font_size=20, size_hint_y=None, height=64)
         back.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
         root.add_widget(back)
-        self._task_label = Label(text="No task", font_size=26, halign="center")
+        self._task_label = Label(text="No task", font_size=34, halign="center")
         root.add_widget(self._task_label)
-        self._clock = Label(text="25:00", font_size=120, halign="center")
+        self._clock = Label(text="25:00", font_size=170, halign="center")
         root.add_widget(self._clock)
         self._state = Label(text="Ready", font_size=16, color=(0.55, 0.55, 0.55, 1))
         root.add_widget(self._state)
-        row1 = BoxLayout(orientation="horizontal", size_hint_y=None, height=64, spacing=8)
+        row1 = BoxLayout(orientation="horizontal", size_hint_y=None, height=88, spacing=8)
         for label, fn in (("Start", self._start), ("Pause", self._pause),
                           ("Reset", self._reset), ("Break", self._break)):
-            b = Button(text=label, font_size=18)
+            b = Button(text=label, font_size=24)
             b.bind(on_release=lambda _b, f=fn: f())
             row1.add_widget(b)
         root.add_widget(row1)
-        done = Button(text="Mark task done", size_hint_y=None, height=64, font_size=18,
+        done = Button(text="Mark task done", size_hint_y=None, height=88, font_size=24,
                       background_normal="", background_color=(0.85, 0.26, 0.2, 1))
         done.bind(on_release=lambda _b: self._mark_done())
         root.add_widget(done)
@@ -443,17 +443,17 @@ class StatsScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(name="stats", **kwargs)
         root = BoxLayout(orientation="vertical", padding=12, spacing=8)
-        top = BoxLayout(orientation="horizontal", size_hint_y=None, height=48, spacing=8)
+        top = BoxLayout(orientation="horizontal", size_hint_y=None, height=72, spacing=8)
         back = Button(text="< Today", size_hint_x=None, width=120)
         back.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
         top.add_widget(back)
-        top.add_widget(Label(text="Stats", font_size=24, halign="left"))
+        top.add_widget(Label(text="Stats", font_size=30, halign="left"))
         refresh = Button(text="Refresh", size_hint_x=None, width=110)
         refresh.bind(on_release=lambda _b: self.refresh())
         top.add_widget(refresh)
         root.add_widget(top)
         scroll = ScrollView()
-        self._body = Label(text="", halign="left", valign="top", size_hint_y=None)
+        self._body = Label(text="", font_size=18, halign="left", valign="top", size_hint_y=None)
         self._body.bind(texture_size=lambda _i, v: setattr(self._body, "height", v[1]),
                         width=lambda _i, v: setattr(self._body, "text_size", (v, None)))
         scroll.add_widget(self._body)
@@ -495,22 +495,22 @@ class SettingsScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(name="settings", **kwargs)
         root = BoxLayout(orientation="vertical", padding=24, spacing=12)
-        back = Button(text="< Today", size_hint_y=None, height=44)
+        back = Button(text="< Today", font_size=20, size_hint_y=None, height=64)
         back.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
         root.add_widget(back)
-        root.add_widget(Label(text="Settings", font_size=24, size_hint_y=None, height=40))
-        root.add_widget(Label(text="Focus minutes:", size_hint_y=None, height=24))
-        self._focus = TextInput(multiline=False, input_filter="int", size_hint_y=None, height=48)
+        root.add_widget(Label(text="Settings", font_size=30, size_hint_y=None, height=56))
+        root.add_widget(Label(text="Focus minutes:", font_size=20, size_hint_y=None, height=36))
+        self._focus = TextInput(multiline=False, input_filter="int", size_hint_y=None, height=64, font_size=22)
         root.add_widget(self._focus)
-        root.add_widget(Label(text="Break minutes:", size_hint_y=None, height=24))
-        self._break = TextInput(multiline=False, input_filter="int", size_hint_y=None, height=48)
+        root.add_widget(Label(text="Break minutes:", font_size=20, size_hint_y=None, height=36))
+        self._break = TextInput(multiline=False, input_filter="int", size_hint_y=None, height=64, font_size=22)
         root.add_widget(self._break)
-        root.add_widget(Label(text="Todoist API token:", size_hint_y=None, height=24))
-        self._token = TextInput(multiline=False, password=True, size_hint_y=None, height=48)
+        root.add_widget(Label(text="Todoist API token:", font_size=20, size_hint_y=None, height=36))
+        self._token = TextInput(multiline=False, password=True, size_hint_y=None, height=64, font_size=20)
         root.add_widget(self._token)
         self._status = Label(text="")
         root.add_widget(self._status)
-        save = Button(text="Save", size_hint_y=None, height=52)
+        save = Button(text="Save", font_size=22, size_hint_y=None, height=72)
         save.bind(on_release=lambda _b: self._save())
         root.add_widget(save)
         self.add_widget(root)
@@ -639,18 +639,18 @@ class PomodoroApp(App):
     def open_task_menu(self, task):
         layout = BoxLayout(orientation="vertical", spacing=8, padding=12)
         popup = Popup(title=_display(task.content, 40), content=layout,
-                      size_hint=(0.85, None), height=380)
-        start = Button(text="Start timer", size_hint_y=None, height=52)
+                      size_hint=(0.9, None), height=480)
+        start = Button(text="Start timer", font_size=20, size_hint_y=None, height=68)
         start.bind(on_release=lambda _b: (popup.dismiss(), self.open_timer(task)))
         layout.add_widget(start)
-        done = Button(text="Complete", size_hint_y=None, height=52)
+        done = Button(text="Complete", font_size=20, size_hint_y=None, height=68)
         done.bind(on_release=lambda _b: (popup.dismiss(), self.complete_task(task)))
         layout.add_widget(done)
         for label, due in (("Tomorrow", "tomorrow"), ("Next week", "next week")):
-            b = Button(text=f"Reschedule: {label}", size_hint_y=None, height=52)
+            b = Button(text=f"Reschedule: {label}", font_size=20, size_hint_y=None, height=68)
             b.bind(on_release=lambda _b, d=due: (popup.dismiss(), self.reschedule_task(task, d)))
             layout.add_widget(b)
-        custom = Button(text="Change date…", size_hint_y=None, height=52)
+        custom = Button(text="Change date…", font_size=20, size_hint_y=None, height=68)
         custom.bind(on_release=lambda _b: (popup.dismiss(), self.open_custom_date(task)))
         layout.add_widget(custom)
         popup.open()
@@ -658,11 +658,11 @@ class PomodoroApp(App):
     def open_custom_date(self, task):
         layout = BoxLayout(orientation="vertical", spacing=8, padding=12)
         entry = TextInput(hint_text="e.g. tomorrow, Mon 2pm", multiline=False,
-                          size_hint_y=None, height=48)
+                          size_hint_y=None, height=64, font_size=20)
         layout.add_widget(entry)
-        popup = Popup(title="Change date", content=layout, size_hint=(0.9, None), height=260)
+        popup = Popup(title="Change date", content=layout, size_hint=(0.9, None), height=340)
         entry.bind(on_text_validate=lambda _i: (popup.dismiss(), self.reschedule_task(task, entry.text.strip())))
-        go = Button(text="Save", size_hint_y=None, height=52)
+        go = Button(text="Save", font_size=22, size_hint_y=None, height=72)
         go.bind(on_release=lambda _b: (popup.dismiss(), self.reschedule_task(task, entry.text.strip())))
         layout.add_widget(go)
         popup.open()
