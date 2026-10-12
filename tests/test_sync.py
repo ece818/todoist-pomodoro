@@ -577,3 +577,128 @@ def test_session_log_and_stats(tmp_path):
     # missing id falls back to "(no project)"
     store.log(content="loose task", duration_sec=60)
     assert store.stats(today=today)["by_project"].get("(no project)") == 60
+
+
+# --- appended: v2 task actions (quick-add + reschedule) ---
+
+def test_quick_add_sends_text_and_request_id_and_parses_timed_due():
+    stub = StubSession()
+
+    def handler(url, headers, payload, timeout):
+        assert url.endswith("/tasks/quick")
+        assert payload == {"text": "Buy milk Mon 2pm"}
+        assert headers.get("X-Request-Id")
+        assert timeout == 10
+        return Resp(
+            200,
+            {
+                "id": "q1",
+                "content": "Buy milk",
+                "description": "",
+                "priority": 1,
+                "due": {"date": "2026-10-12T18:00:00Z"},
+            },
+        )
+
+    stub.post_handler = handler
+    client = TodoistClient("tok", session=stub)
+    task = client.quick_add("Buy milk Mon 2pm")
+    assert task.id == "q1"
+    assert task.due_date == date(2026, 10, 12)
+
+
+def test_quick_add_blank_raises_value_error():
+    client = TodoistClient("tok", session=StubSession())
+    with pytest.raises(ValueError):
+        client.quick_add("")
+    with pytest.raises(ValueError):
+        client.quick_add("   ")
+    # store-level blank never queues
+    store = SyncStore(client)
+    with pytest.raises(ValueError):
+        store.quick_add("  ")
+    assert store.pending_adds == []
+
+
+def test_transient_quick_add_queues_with_kind_and_replays_via_quick_endpoint():
+    stub = StubSession()
+    stub.post_handler = lambda *a: (_ for _ in ()).throw(
+        requests.ConnectionError("down")
+    )
+    client = TodoistClient("tok", session=stub)
+    store = SyncStore(client)
+    with pytest.raises(TodoistNetworkError):
+        store.quick_add("Buy milk Mon 2pm")
+    assert len(store.pending_adds) == 1
+    entry = store.pending_adds[0]
+    assert len(entry) == 3 and entry[0] == "quick" and entry[1] == "Buy milk Mon 2pm"
+    original_rid = entry[2]
+
+    urls: list[str] = []
+
+    def succeed(url, headers, payload, timeout):
+        urls.append(url)
+        assert headers.get("X-Request-Id") == original_rid
+        return Resp(200, make_task_payload("n1", "Buy milk"))
+
+    stub.post_handler = succeed
+    result = store.retry_pending()
+    assert result == {"added": 1, "still_pending": 0}
+    assert urls and "/tasks/quick" in urls[0]
+
+
+def test_legacy_two_tuple_pending_entries_replay_via_plain_add():
+    stub = StubSession()
+    urls: list[str] = []
+
+    def handler(url, headers, payload, timeout):
+        urls.append(url)
+        return Resp(200, make_task_payload("x1", payload["content"]))
+
+    stub.post_handler = handler
+    store = SyncStore(TodoistClient("tok", session=stub))
+    store.pending_adds = [("one", "rid-1")]
+    result = store.retry_pending()
+    assert result == {"added": 1, "still_pending": 0}
+    assert urls and urls[0].endswith("/tasks")
+    assert "/tasks/quick" not in urls[0]
+
+
+def test_reschedule_posts_due_string_verbatim_and_returns_updated_task():
+    stub = StubSession()
+
+    def handler(url, headers, payload, timeout):
+        assert url.endswith("/tasks/t1")
+        assert payload == {"due_string": "next Friday"}
+        assert timeout == 10
+        return Resp(200, make_task_payload("t1", "T", "2026-10-16"))
+
+    stub.post_handler = handler
+    client = TodoistClient("tok", session=stub)
+    updated = client.update_due("t1", "next Friday")
+    assert updated.id == "t1"
+    assert updated.due_date == date(2026, 10, 16)
+
+    # store-level delegation posts verbatim too
+    seen: list[dict[str, Any]] = []
+
+    def handler2(url, headers, payload, timeout):
+        seen.append({"url": url, "json": payload})
+        return Resp(200, make_task_payload("t1", "T", "2026-10-16"))
+
+    stub.post_handler = handler2
+    store = SyncStore(client)
+    out = store.reschedule(Task(id="t1", content="T"), "next Friday")
+    assert out.due_date == date(2026, 10, 16)
+    assert seen[0]["json"] == {"due_string": "next Friday"}
+
+
+def test_reschedule_blank_raises_value_error():
+    client = TodoistClient("tok", session=StubSession())
+    with pytest.raises(ValueError):
+        client.update_due("t1", "")
+    with pytest.raises(ValueError):
+        client.update_due("t1", "   ")
+    store = SyncStore(client)
+    with pytest.raises(ValueError):
+        store.reschedule(Task(id="t1", content="T"), "  ")

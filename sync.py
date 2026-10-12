@@ -90,9 +90,10 @@ class SyncStore:
     def __init__(self, client: TodoistClient, state_path: str | Path | None = None):
         self.client = client
         self.state_path = Path(state_path) if state_path is not None else None
-        # List of (content, request_id) tuples; request_id is stable per add
-        # and reused on retry for duplicate protection.
-        self.pending_adds: list[tuple[str, str]] = []
+        # List of pending entries: plain adds are (content, request_id)
+        # 2-tuples; quick-adds are ("quick", text, request_id) 3-tuples.
+        # request_id is stable per add and reused on retry.
+        self.pending_adds: list[tuple] = []
         self._closing: set[str] = set()
         self._all_tasks: list[Task] = []
         self.active_filter: str | None = None
@@ -181,17 +182,44 @@ class SyncStore:
             self._persist_quietly()
             raise
         # Defensive: drop any stale entry with this request_id on success.
-        self.pending_adds = [
-            (c, r) for (c, r) in self.pending_adds if r != request_id
-        ]
+        self.pending_adds = [e for e in self.pending_adds if e[-1] != request_id]
         return task
+
+    def quick_add(self, text: str) -> Task:
+        request_id = uuid.uuid4().hex
+        try:
+            task = self.client.quick_add(text, request_id=request_id)
+        except (TodoistNetworkError, TodoistRateLimited):
+            self.pending_adds.append(("quick", text, request_id))
+            self._persist_quietly()
+            raise
+        # Defensive: drop any stale entry with this request_id on success.
+        self.pending_adds = [e for e in self.pending_adds if e[-1] != request_id]
+        return task
+
+    def reschedule(self, task: Task, due_string: str) -> Task:
+        """Reschedule an existing task; transient/auth errors propagate.
+
+        No queue: the caller shows the error and retries by re-calling.
+        """
+        return self.client.update_due(str(task.id), due_string)
 
     def retry_pending(self) -> dict[str, int]:
         added = 0
         queue = list(self.pending_adds)
-        for content, request_id in queue:
+        for entry in queue:
             try:
-                self.client.add_task(content, request_id=request_id)
+                if isinstance(entry, (list, tuple)) and len(entry) == 3:
+                    kind, content, request_id = entry[0], entry[1], entry[2]
+                    if kind == "quick":
+                        self.client.quick_add(content, request_id=request_id)
+                    else:  # kind "add" or unknown legacy: plain add
+                        self.client.add_task(content, request_id=request_id)
+                elif isinstance(entry, (list, tuple)) and len(entry) == 2:
+                    content, request_id = entry[0], entry[1]
+                    self.client.add_task(content, request_id=request_id)
+                else:
+                    continue
             except TodoistAuthError:
                 raise
             except (TodoistNetworkError, TodoistRateLimited):
@@ -200,11 +228,19 @@ class SyncStore:
                 # Non-transient API errors: keep queued, move on.
                 continue
             else:
-                self.pending_adds = [
-                    (c, r)
-                    for (c, r) in self.pending_adds
-                    if not (c == content and r == request_id)
-                ]
+                try:
+                    self.pending_adds.remove(entry)  # type: ignore[arg-type]
+                except ValueError:
+                    # Entry already gone (e.g. normalized tuple vs list form).
+                    self.pending_adds = [
+                        e
+                        for e in self.pending_adds
+                        if not (
+                            isinstance(e, (list, tuple))
+                            and len(e) == len(entry)  # type: ignore[arg-type]
+                            and list(e) == list(entry)
+                        )
+                    ]
                 added += 1
         self._persist_quietly()
         return {"added": added, "still_pending": len(self.pending_adds)}
@@ -245,11 +281,21 @@ class SyncStore:
     def save_state(self) -> None:
         if self.state_path is None:
             return
-        data = {
-            "pending_adds": [
-                {"content": c, "request_id": r} for (c, r) in self.pending_adds
-            ]
-        }
+        items: list[dict[str, str]] = []
+        for entry in self.pending_adds:
+            if isinstance(entry, (list, tuple)) and len(entry) == 3:
+                kind, content, request_id = str(entry[0]), str(entry[1]), str(entry[2])
+                if kind == "quick":
+                    items.append(
+                        {"kind": "quick", "content": content, "request_id": request_id}
+                    )
+                else:
+                    items.append({"content": content, "request_id": request_id})
+            elif isinstance(entry, (list, tuple)) and len(entry) == 2:
+                items.append(
+                    {"content": str(entry[0]), "request_id": str(entry[1])}
+                )
+        data = {"pending_adds": items}
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.state_path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -263,10 +309,28 @@ class SyncStore:
         except (ValueError, OSError):
             return
         items = data.get("pending_adds", []) if isinstance(data, dict) else []
-        restored: list[tuple[str, str]] = []
+        restored: list[tuple] = []
         for entry in items:
             if isinstance(entry, dict) and "content" in entry and "request_id" in entry:
-                restored.append((str(entry["content"]), str(entry["request_id"])))
+                if entry.get("kind") == "quick":
+                    restored.append(
+                        ("quick", str(entry["content"]), str(entry["request_id"]))
+                    )
+                else:
+                    # Old 2-key dicts (no kind) and kind "add": plain add pair.
+                    restored.append((str(entry["content"]), str(entry["request_id"])))
+            elif isinstance(entry, dict) and "text" in entry and "request_id" in entry:
+                # Tolerate quick-add shaped dicts using "text" key.
+                restored.append(
+                    ("quick", str(entry["text"]), str(entry["request_id"]))
+                )
+            elif isinstance(entry, (list, tuple)) and len(entry) == 3:
+                if str(entry[0]) == "quick":
+                    restored.append(
+                        ("quick", str(entry[1]), str(entry[2]))
+                    )
+                else:
+                    restored.append((str(entry[1]), str(entry[2])))
             elif isinstance(entry, (list, tuple)) and len(entry) == 2:
                 restored.append((str(entry[0]), str(entry[1])))
         self.pending_adds = restored

@@ -34,6 +34,12 @@ from sync import FilterStore, SyncStore
 from todoist import TodoistClient
 from ui_celebrate import CelebrationWindow
 from ui_common import add_close_shortcuts
+
+try:
+    # Implemented by the backend agent; absent until it lands.
+    from actions import TaskActions
+except ImportError:
+    TaskActions = None  # type: ignore[assignment]
 from ui_palette import PaletteWindow
 from ui_settings import SettingsDialog
 from ui_stats import StatsPanel
@@ -67,6 +73,8 @@ class PomodoroApp(Adw.Application):
         self._stack: Gtk.Stack | None = None
         self._timer_view: TimerView | None = None
         self._stats_panel: StatsPanel | None = None
+        self._today_panel: TodayPanel | None = None
+        self._actions = None
 
     def do_activate(self) -> None:
         win = Adw.ApplicationWindow(application=self)
@@ -75,9 +83,19 @@ class PomodoroApp(Adw.Application):
 
         self._stack = Gtk.Stack()
         self._stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        if TaskActions is not None:
+            self._actions = TaskActions(
+                self._store, on_start_timer=self._on_task_selected
+            )
+        else:
+            self._actions = None
         today = TodayPanel(
-            self._store, on_task_selected=self._on_task_selected
+            self._store,
+            on_task_selected=self._on_task_selected,
+            actions=self._actions,
+            on_mark_done=self._on_mark_task_done,
         )
+        self._today_panel = today
         self._stack.add_titled(today, "today", "Today")
 
         self._timer_view = TimerView(
@@ -146,6 +164,35 @@ class PomodoroApp(Adw.Application):
         shortcut_controller.add_shortcut(quit_shortcut)
         win.add_controller(shortcut_controller)
 
+        # In-app hotkeys for the Today list's selected row (GLOBAL scope).
+        hotkey_controller = Gtk.ShortcutController()
+        hotkey_controller.set_scope(Gtk.ShortcutScope.GLOBAL)
+        hotkey_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                trigger=Gtk.ShortcutTrigger.parse_string("<Control>Return"),
+                action=Gtk.CallbackAction.new(self._on_hotkey_start_timer),
+            )
+        )
+        hotkey_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                trigger=Gtk.ShortcutTrigger.parse_string("<Control>KP_Enter"),
+                action=Gtk.CallbackAction.new(self._on_hotkey_start_timer),
+            )
+        )
+        hotkey_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                trigger=Gtk.ShortcutTrigger.parse_string("<Control><Shift>C"),
+                action=Gtk.CallbackAction.new(self._on_hotkey_mark_done),
+            )
+        )
+        hotkey_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                trigger=Gtk.ShortcutTrigger.parse_string("<Control>r"),
+                action=Gtk.CallbackAction.new(self._on_hotkey_reschedule),
+            )
+        )
+        win.add_controller(hotkey_controller)
+
         win.present()
 
     # -- wiring --------------------------------------------------------
@@ -201,6 +248,62 @@ class PomodoroApp(Adw.Application):
         self.quit()
         return True
 
+    # -- in-app hotkeys (Today list's selected row) ----------------------
+
+    def _selected_today_task(self):
+        if self._today_panel is None:
+            return None
+        try:
+            return self._today_panel.get_selected_task()
+        except Exception:
+            return None
+
+    def _focus_in_editable(self) -> bool:
+        """True when keyboard focus sits inside a text entry."""
+        try:
+            win = self.get_active_window()
+            focus = win.get_focus() if win is not None else None
+            return isinstance(focus, Gtk.Editable)
+        except Exception:
+            return False
+
+    def _on_hotkey_start_timer(self, _widget, _args) -> bool:
+        # Ctrl+Enter: never steal keys from text entries.
+        if self._focus_in_editable():
+            return False
+        task = self._selected_today_task()
+        if task is None or self._actions is None:
+            return False
+        try:
+            self._actions.start_timer(task)
+        except RuntimeError:
+            # Unregistered: same fallback the row menu uses.
+            try:
+                self._on_task_selected(task)
+            except Exception:
+                return False
+        except Exception:
+            return False
+        return True
+
+    def _on_hotkey_mark_done(self, _widget, _args) -> bool:
+        task = self._selected_today_task()
+        if task is None or self._actions is None:
+            return False
+        try:
+            self._on_mark_task_done(task)
+        except Exception:
+            return False
+        return True
+
+    def _on_hotkey_reschedule(self, _widget, _args) -> bool:
+        if self._today_panel is None or self._actions is None:
+            return False
+        try:
+            return bool(self._today_panel.open_reschedule_for_selected())
+        except Exception:
+            return False
+
     def _on_settings_clicked(self, _button: Gtk.Button) -> None:
         dialog = SettingsDialog(
             focus_min=self._settings.focus_min,
@@ -231,6 +334,7 @@ class PomodoroApp(Adw.Application):
             self._store,
             on_pick=self._open_task,
             filter_store=self._filter_store,
+            actions=self._actions,
         )
         parent = self.get_active_window()
         if parent is not None:

@@ -285,6 +285,42 @@ class TodoistClient:
             raise TodoistError("Unexpected add task payload")
         return _parse_task(payload)
 
+    def quick_add(self, text: str, request_id: str | None = None) -> Task:
+        """POST /tasks/quick with X-Request-Id idempotency header."""
+        if not text or not text.strip():
+            raise ValueError("text must not be blank")
+        rid = request_id or uuid.uuid4().hex
+        resp = self._post(
+            "/tasks/quick",
+            json={"text": text},
+            extra_headers={"X-Request-Id": rid},
+        )
+        self._raise_for_status(resp, "quick add task")
+        try:
+            payload = resp.json()
+        except (ValueError, AttributeError) as exc:
+            raise TodoistError(f"Invalid JSON in quick add task: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise TodoistError("Unexpected quick add task payload")
+        return _parse_task(payload)
+
+    def update_due(self, task_id: str, due_string: str) -> Task:
+        """POST /tasks/{id} with a natural-language due_string (verbatim)."""
+        if not due_string or not due_string.strip():
+            raise ValueError("due_string must not be blank")
+        resp = self._post(
+            f"/tasks/{task_id}",
+            json={"due_string": due_string},
+        )
+        self._raise_for_status(resp, "update due")
+        try:
+            payload = resp.json()
+        except (ValueError, AttributeError) as exc:
+            raise TodoistError(f"Invalid JSON in update due: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise TodoistError("Unexpected update due payload")
+        return _parse_task(payload)
+
     def close_task(self, task_id: str) -> None:
         """POST /tasks/{id}/close, expect 204.
 

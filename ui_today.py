@@ -2,8 +2,9 @@
 
 Selection model: activating a row (click / Enter) or toggling its
 checkbox selects the task for the timer via ``on_task_selected``.
-Nothing here ever closes/completes a task — completion happens only
-through the explicit CelebrationWindow flow.
+The right-click menu's Complete item routes through the explicit
+``on_mark_done`` (CelebrationWindow) flow; only when that callback is
+absent does it call ``actions.complete`` directly in a worker thread.
 """
 
 from __future__ import annotations
@@ -16,10 +17,18 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 
-from gi.repository import GLib, Gtk
+from gi.repository import Gdk, Gio, GLib, Gtk
 
 from sync import SyncStore
 from todoist import Task, TodoistAuthError, TodoistError
+
+
+# Preset labels with the due_string each sends to TaskActions.reschedule.
+_RESCHEDULE_PRESETS: tuple[tuple[str, str], ...] = (
+    ("Tomorrow", "tomorrow"),
+    ("Next week", "next week"),
+    ("Next Monday", "next monday"),
+)
 
 
 def _is_overdue(task: Task) -> bool:
@@ -60,16 +69,27 @@ class TodayPanel(Gtk.Box):
 
     :param store: backend SyncStore (network calls run in worker threads).
     :param on_task_selected: callback ``fn(task)`` fired on row activation.
+    :param actions: optional ``actions.TaskActions`` driving the right-click
+        menu (start timer / complete / reschedule / quick-add). When None
+        no context menu is attached.
+    :param on_mark_done: optional explicit task-done callback ``fn(task)``
+        (the same one the timer's Mark-done button uses); the menu's
+        Complete item calls it. When None, Complete falls back to
+        ``actions.complete`` in a worker thread with status feedback.
     """
 
     def __init__(
         self,
         store: SyncStore,
         on_task_selected: Optional[Callable[[Task], None]] = None,
+        actions=None,
+        on_mark_done: Optional[Callable[[Task], None]] = None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self._store = store
         self._on_task_selected = on_task_selected
+        self._actions = actions
+        self._on_mark_done = on_mark_done
         self._rows: dict[str, Gtk.ListBoxRow] = {}
         self._auth_failed = False
         self._project_ids: list[str] = [""]  # "" == all projects
@@ -130,7 +150,7 @@ class TodayPanel(Gtk.Box):
 
         add_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self._entry = Gtk.Entry()
-        self._entry.set_placeholder_text("Add a task…")
+        self._entry.set_placeholder_text("Try 'Call mom Mon 2pm…'")
         self._entry.set_hexpand(True)
         self._entry.connect("activate", self._on_add_activated)
         add_box.append(self._entry)
@@ -165,14 +185,28 @@ class TodayPanel(Gtk.Box):
         else:
             GLib.idle_add(self._on_tasks_loaded, tasks)
 
+    def _quick_add_call(self, content: str) -> Task:
+        """Quick-add via actions, else store.quick_add, else legacy add."""
+        if self._actions is not None:
+            quick = getattr(self._actions, "quick_add", None)
+            if callable(quick):
+                return quick(content)
+        store_quick = getattr(self._store, "quick_add", None)
+        if callable(store_quick):
+            return store_quick(content)
+        return self._store.add(content)
+
     def _add_worker(self, content: str) -> None:
         try:
-            task = self._store.add(content)
+            task = self._quick_add_call(content)
         except TodoistAuthError:
             GLib.idle_add(self._on_auth_error)
             GLib.idle_add(self._on_add_failed, content, "unauthorized")
         except TodoistError as exc:
             GLib.idle_add(self._on_add_failed, content, str(exc))
+        except ValueError as exc:
+            # Blank/invalid input rejected by quick_add; nothing to retry.
+            GLib.idle_add(self._on_add_failed, content, str(exc) or "invalid input")
         except Exception as exc:
             GLib.idle_add(self._on_add_failed, content, str(exc))
         else:
@@ -341,6 +375,275 @@ class TodayPanel(Gtk.Box):
     def _on_retry_clicked(self, _button: Gtk.Button) -> None:
         threading.Thread(target=self._retry_worker, daemon=True).start()
 
+    # -- public (in-app hotkey support) --------------------------------
+
+    def get_selected_task(self) -> Optional[Task]:
+        """Return the selected row's task, or None when nothing selected."""
+        try:
+            row = self._list.get_selected_row()
+        except Exception:
+            return None
+        if row is None:
+            return None
+        return getattr(row, "_task", None)
+
+    def open_reschedule_for_selected(self) -> bool:
+        """Pop the row menu for the selected task (Ctrl+R entry point).
+
+        Returns True when a menu was shown. The menu's Reschedule…
+        submenu holds the presets, keeping a single menu code path.
+        """
+        if self._actions is None:
+            return False
+        try:
+            row = self._list.get_selected_row()
+        except Exception:
+            return False
+        if row is None or getattr(row, "_task", None) is None:
+            return False
+        try:
+            self._show_row_menu(row, 8, 8)
+        except Exception:
+            return False
+        return True
+
+    # -- right-click context menu --------------------------------------
+
+    def _attach_row_menu(self, row: Gtk.ListBoxRow) -> None:
+        gesture = Gtk.GestureClick.new()
+        gesture.set_button(Gdk.BUTTON_SECONDARY)
+        gesture.connect("pressed", self._on_row_right_pressed, row)
+        row.add_controller(gesture)
+
+    def _on_row_right_pressed(
+        self, gesture: Gtk.GestureClick, _n_press: int, x: float, y: float, row: Gtk.ListBoxRow
+    ) -> None:
+        if self._actions is None:
+            return
+        try:
+            button = gesture.get_current_button()
+        except Exception:
+            button = Gdk.BUTTON_SECONDARY
+        if button != Gdk.BUTTON_SECONDARY:  # == 3
+            return
+        if getattr(row, "_task", None) is None:
+            return
+        try:
+            self._show_row_menu(row, x, y)
+        except Exception:
+            pass
+
+    def _show_row_menu(self, row: Gtk.ListBoxRow, x: float, y: float) -> None:
+        menu = Gio.Menu.new()
+        menu.append("Start timer", "row.start")
+        menu.append("Complete", "row.done")
+        sub = Gio.Menu.new()
+        sub.append("Tomorrow", "row.rs_tomorrow")
+        sub.append("Next week", "row.rs_next_week")
+        sub.append("Next Monday", "row.rs_next_monday")
+        sub.append("Custom…", "row.rs_custom")
+        menu.append_submenu("Reschedule…", sub)
+        menu.append("Change date…", "row.change_date")
+
+        group = Gio.SimpleActionGroup.new()
+
+        def _add(name: str, fn) -> None:
+            act = Gio.SimpleAction.new(name, None)
+            act.connect("activate", lambda _a, _p: fn(row))
+            group.add_action(act)
+
+        _add("start", self._menu_start_timer)
+        _add("done", self._menu_complete)
+        _add("rs_tomorrow", lambda r: self._menu_reschedule(r, "tomorrow"))
+        _add("rs_next_week", lambda r: self._menu_reschedule(r, "next week"))
+        _add("rs_next_monday", lambda r: self._menu_reschedule(r, "next monday"))
+        _add("rs_custom", self._menu_custom_date)
+        _add("change_date", self._menu_custom_date)
+        row.insert_action_group("row", group)
+
+        popover = Gtk.PopoverMenu.new_from_model(menu)
+        popover.set_parent(row)
+        rect = Gdk.Rectangle()
+        rect.x, rect.y, rect.width, rect.height = int(x), int(y), 1, 1
+        popover.set_pointing_to(rect)
+        popover.connect("closed", lambda _p: _p.unparent())
+        popover.popup()
+
+    def _row_task(self, row: Gtk.ListBoxRow) -> Optional[Task]:
+        # Look up live so a rescheduled row never acts on a stale object.
+        return getattr(row, "_task", None)
+
+    def _menu_start_timer(self, row: Gtk.ListBoxRow) -> None:
+        task = self._row_task(row)
+        if task is None:
+            return
+        if self._actions is not None:
+            start = getattr(self._actions, "start_timer", None)
+            if callable(start):
+                try:
+                    start(task)
+                    return
+                except RuntimeError:
+                    pass  # unregistered: fall through to on_task_selected
+                except Exception as exc:
+                    self._set_status(f"Could not start timer: {exc}")
+                    return
+        if self._on_task_selected is not None:
+            try:
+                self._on_task_selected(task)
+            except Exception:
+                pass
+
+    def _menu_complete(self, row: Gtk.ListBoxRow) -> None:
+        task = self._row_task(row)
+        if task is None:
+            return
+        # Explicit flow first: same callback the timer's Mark-done uses.
+        if self._on_mark_done is not None:
+            try:
+                self._on_mark_done(task)
+            except Exception:
+                pass
+            return
+        if self._actions is None:
+            return
+        threading.Thread(target=self._complete_worker, args=(task,), daemon=True).start()
+
+    def _menu_reschedule(self, row: Gtk.ListBoxRow, due_string: str) -> None:
+        task = self._row_task(row)
+        if task is None or self._actions is None:
+            return
+        if not (due_string or "").strip():
+            self._set_status("Enter a date like 'tomorrow'.")
+            return
+        threading.Thread(
+            target=self._reschedule_worker,
+            args=(task, due_string.strip()),
+            daemon=True,
+        ).start()
+
+    def _menu_custom_date(self, row: Gtk.ListBoxRow) -> None:
+        if self._row_task(row) is None:
+            return
+        try:
+            parent = row.get_root()
+        except Exception:
+            parent = None
+        dlg = Gtk.Dialog(title="Change date…")
+        try:
+            if isinstance(parent, Gtk.Window):
+                dlg.set_transient_for(parent)
+        except Exception:
+            pass
+        dlg.set_modal(True)
+        dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("Apply", Gtk.ResponseType.APPLY)
+        dlg.set_default_response(Gtk.ResponseType.APPLY)
+        try:
+            area = dlg.get_content_area()
+        except Exception:
+            area = None
+        entry = Gtk.Entry()
+        entry.set_placeholder_text("e.g. tomorrow, next Monday, 2026-10-20")
+        entry.set_hexpand(True)
+        entry.set_activates_default(True)
+        if area is not None:
+            try:
+                area.set_spacing(8)
+            except Exception:
+                pass
+            area.append(entry)
+        else:
+            dlg.set_child(entry)
+
+        def _on_response(d: Gtk.Dialog, resp: int) -> None:
+            if resp == Gtk.ResponseType.APPLY:
+                due = entry.get_text().strip()
+                if due:
+                    self._menu_reschedule(row, due)
+                else:
+                    self._set_status("Enter a date like 'tomorrow'.")
+            try:
+                d.close()
+            except Exception:
+                pass
+
+        dlg.connect("response", _on_response)
+        try:
+            dlg.present()
+        except Exception:
+            pass
+        try:
+            entry.grab_focus()
+        except Exception:
+            pass
+
+    # -- menu workers (never touch GTK directly; marshal via idle_add) -
+
+    def _complete_worker(self, task: Task) -> None:
+        try:
+            self._actions.complete(task)
+        except TodoistAuthError:
+            GLib.idle_add(self._on_auth_error)
+        except TodoistError as exc:
+            GLib.idle_add(self._set_status_idle, f"Could not complete: {exc}")
+        except Exception as exc:
+            GLib.idle_add(self._set_status_idle, f"Could not complete: {exc}")
+        else:
+            GLib.idle_add(self._on_complete_done, getattr(task, "id", None))
+
+    def _reschedule_worker(self, task: Task, due_string: str) -> None:
+        try:
+            updated = self._actions.reschedule(task, due_string)
+        except ValueError as exc:
+            GLib.idle_add(
+                self._set_status_idle, f"Could not reschedule: {exc}"
+            )
+        except TodoistAuthError:
+            GLib.idle_add(self._on_auth_error)
+        except TodoistError as exc:
+            GLib.idle_add(
+                self._set_status_idle, f"Could not reschedule: {exc}"
+            )
+        except Exception as exc:
+            GLib.idle_add(
+                self._set_status_idle, f"Could not reschedule: {exc}"
+            )
+        else:
+            GLib.idle_add(self._on_rescheduled, task, updated)
+
+    def _set_status_idle(self, text: str) -> bool:
+        self._set_status(text)
+        return False
+
+    def _on_complete_done(self, task_id) -> bool:
+        row = self._rows.pop(str(task_id), None) if task_id is not None else None
+        if row is not None:
+            try:
+                self._list.remove(row)
+            except Exception:
+                pass
+        self._set_status("Task completed.")
+        return False
+
+    def _on_rescheduled(self, old_task: Task, updated: Task) -> bool:
+        old_id = getattr(old_task, "id", None)
+        row = self._rows.get(str(old_id)) if old_id is not None else None
+        if row is not None:
+            row._task = updated  # type: ignore[attr-defined]
+            try:
+                row.set_child(self._build_task_box(updated))
+            except Exception:
+                pass
+            new_id = getattr(updated, "id", old_id)
+            if new_id is not None and str(new_id) != str(old_id):
+                self._rows.pop(str(old_id), None)
+                self._rows[str(new_id)] = row
+            self._apply_filter()
+        due = getattr(updated, "due_date", None)
+        self._set_status(f"Rescheduled to {due}." if due else "Rescheduled.")
+        return False
+
     # -- row builders ---------------------------------------------------
 
     def _set_status(self, text: str) -> None:
@@ -361,6 +664,20 @@ class TodayPanel(Gtk.Box):
         row = Gtk.ListBoxRow()
         row.set_activatable(True)
         row._task = task  # type: ignore[attr-defined]
+        row.set_child(self._build_task_box(task))
+        if self._actions is not None:
+            try:
+                self._attach_row_menu(row)
+            except Exception:
+                pass
+        self._list.append(row)
+        task_id = getattr(task, "id", None)
+        if task_id is not None:
+            self._rows[str(task_id)] = row
+        # Keep single-row adds consistent with any active filter text.
+        self._apply_filter()
+
+    def _build_task_box(self, task: Task) -> Gtk.Box:
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         box.set_margin_top(6)
         box.set_margin_bottom(6)
@@ -395,14 +712,7 @@ class TodayPanel(Gtk.Box):
             meta_label = Gtk.Label(label=meta)
             meta_label.add_css_class("dim-label")
             box.append(meta_label)
-
-        row.set_child(box)
-        self._list.append(row)
-        task_id = getattr(task, "id", None)
-        if task_id is not None:
-            self._rows[str(task_id)] = row
-        # Keep single-row adds consistent with any active filter text.
-        self._apply_filter()
+        return box
 
     def _append_pending_row(self, content: str, message: str) -> None:
         row = Gtk.ListBoxRow()
