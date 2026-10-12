@@ -197,8 +197,10 @@ class PomodoroApp(Adw.Application):
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Resolve .env next to the app itself so `timer` works from any cwd.
+    app_dir = Path(__file__).resolve().parent
     try:
-        config = load_config(env_path=".env")
+        config = load_config(env_path=app_dir / ".env")
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
