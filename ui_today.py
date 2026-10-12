@@ -661,7 +661,13 @@ class TodayPanel(Gtk.Box):
         box.set_margin_end(8)
 
         check = Gtk.CheckButton()
-        check.set_tooltip_text("Mark complete")
+        try:
+            short = str(task.content or "").strip()
+            if len(short) > 60:
+                short = short[:57] + "…"
+            check.set_tooltip_text(f"Mark complete: {short}" if short else "Mark complete")
+        except Exception:
+            check.set_tooltip_text("Mark complete")
         # Checking completes the task (celebration flow); uncheck is a
         # no-op. Row click still selects the task for the timer.
         check.connect(
