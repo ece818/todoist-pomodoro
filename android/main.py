@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
 
 from kivy.app import App
 from kivy.clock import Clock
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
@@ -41,6 +42,35 @@ def _fmt_clock(total_sec):
     if h:
         return f"{h}:{m:02d}:{s:02d}"
     return f"{m:02d}:{s:02d}"
+
+
+def _display(text, limit=44):
+    """Phone-safe display text.
+
+    The bundled device font has no color-emoji glyphs (tofu boxes) and
+    Kivy's on-device shorten/text measurement misbehaves, so strip
+    astral-plane characters and truncate in Python. Data untouched.
+    """
+    clean = "".join(
+        ch for ch in str(text or "")
+        if ord(ch) < 0x10000 and ch not in ("\uFE0F", "\u200D")
+    ).strip()
+    if len(clean) > limit:
+        return clean[: limit - 1] + "…"
+    return clean
+
+
+def _left_aligned(text, props):
+    """Left-aligned label without text_size/shorten.
+
+    On-device SDL text measurement misbehaves (mirrored text), so align
+    with an AnchorLayout and size the label from its own texture.
+    """
+    anchor = AnchorLayout(anchor_x="left", anchor_y="center")
+    label = Label(text=text, size_hint=(None, None), **props)
+    label.bind(texture_size=label.setter("size"))
+    anchor.add_widget(label)
+    return anchor
 
 
 class StatusBanner(BoxLayout):
@@ -94,14 +124,15 @@ class SetupScreen(Screen):
         box = BoxLayout(orientation="vertical", padding=24, spacing=12)
         box.add_widget(Label(text="Todoist Pomodoro", font_size=28, size_hint_y=None, height=60))
         box.add_widget(Label(
-            text="Paste your Todoist personal API token.\nTodoist → Settings → Integrations → Developer.",
+            text="Paste your Todoist personal API token.\nTodoist > Settings > Integrations > Developer.",
             halign="center"))
         self._entry = TextInput(hint_text="Todoist API token", multiline=False,
                                 password=True, size_hint_y=None, height=48)
         box.add_widget(self._entry)
         self._status = Label(text="", halign="center")
         box.add_widget(self._status)
-        go = Button(text="Connect", size_hint_y=None, height=56)
+        go = Button(text="Connect", size_hint_y=None, height=56,
+                      background_normal="", background_color=(0.2, 0.5, 0.9, 1))
         go.bind(on_release=self._on_connect)
         box.add_widget(go)
         self.add_widget(box)
@@ -129,22 +160,18 @@ class SetupScreen(Screen):
 
 class TaskRow(BoxLayout):
     def __init__(self, task, meta, **kwargs):
-        super().__init__(orientation="horizontal", size_hint_y=None, height=56,
+        super().__init__(orientation="horizontal", size_hint_y=None, height=64,
                          spacing=8, padding=(8, 4), **kwargs)
         self.task = task
         check = CheckBox(size_hint_x=None, width=48)
         check.bind(active=self._on_check)
         self.add_widget(check)
         mid = BoxLayout(orientation="vertical")
-        name = Label(text=task.content, halign="left", valign="bottom",
-                     shorten=True, shorten_from="right")
-        name.bind(size=name.setter("text_size"))
-        mid.add_widget(name)
+        mid.add_widget(_left_aligned(_display(task.content), {}))
         if meta:
-            sub = Label(text=meta, font_size=12, color=(0.55, 0.55, 0.55, 1),
-                        halign="left", valign="top", shorten=True)
-            sub.bind(size=sub.setter("text_size"))
-            mid.add_widget(sub)
+            mid.add_widget(_left_aligned(
+                _display(meta, 60),
+                {"font_size": 12, "color": (0.6, 0.6, 0.6, 1)}))
         self.add_widget(mid)
         menu = Button(text="···", size_hint_x=None, width=56)
         menu.bind(on_release=lambda _b: App.get_running_app().open_task_menu(task))
@@ -165,14 +192,14 @@ class TaskRow(BoxLayout):
 class TodayScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(name="today", **kwargs)
-        root = BoxLayout(orientation="vertical", padding=12, spacing=8)
+        root = BoxLayout(orientation="vertical", padding=8, spacing=8)
         top = BoxLayout(orientation="horizontal", size_hint_y=None, height=48, spacing=8)
-        top.add_widget(Label(text="Today", font_size=24, size_hint_x=None, width=100,
+        top.add_widget(Label(text="Today", font_size=24, size_hint_x=None, width=78,
                              halign="left"))
         self._filter = TextInput(hint_text="Filter tasks…", multiline=False)
         self._filter.bind(text=lambda _i, _v: self._apply_filter())
         top.add_widget(self._filter)
-        refresh = Button(text="Refresh", size_hint_x=None, width=110)
+        refresh = Button(text="Refresh", size_hint_x=None, width=92)
         refresh.bind(on_release=lambda _b: self.refresh())
         top.add_widget(refresh)
         root.add_widget(top)
@@ -285,7 +312,7 @@ class TimerScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(name="timer", **kwargs)
         root = BoxLayout(orientation="vertical", padding=24, spacing=12)
-        back = Button(text="← Today", size_hint_y=None, height=44)
+        back = Button(text="< Today", size_hint_y=None, height=44)
         back.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
         root.add_widget(back)
         self._task_label = Label(text="No task", font_size=22, halign="center")
@@ -301,7 +328,8 @@ class TimerScreen(Screen):
             b.bind(on_release=lambda _b, f=fn: f())
             row1.add_widget(b)
         root.add_widget(row1)
-        done = Button(text="Mark task done", size_hint_y=None, height=52)
+        done = Button(text="Mark task done", size_hint_y=None, height=52,
+                      background_normal="", background_color=(0.85, 0.26, 0.2, 1))
         done.bind(on_release=lambda _b: self._mark_done())
         root.add_widget(done)
         self.banner = StatusBanner()
@@ -321,7 +349,7 @@ class TimerScreen(Screen):
             self._total = s.focus_min * 60
             self._remaining = self._total
         task = app.timer_task
-        self._task_label.text = task.content if task is not None else "No task"
+        self._task_label.text = _display(task.content, 60) if task is not None else "No task"
         self._render()
 
     def _render(self):
@@ -416,7 +444,7 @@ class StatsScreen(Screen):
         super().__init__(name="stats", **kwargs)
         root = BoxLayout(orientation="vertical", padding=12, spacing=8)
         top = BoxLayout(orientation="horizontal", size_hint_y=None, height=48, spacing=8)
-        back = Button(text="← Today", size_hint_x=None, width=120)
+        back = Button(text="< Today", size_hint_x=None, width=120)
         back.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
         top.add_widget(back)
         top.add_widget(Label(text="Stats", font_size=24, halign="left"))
@@ -467,7 +495,7 @@ class SettingsScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(name="settings", **kwargs)
         root = BoxLayout(orientation="vertical", padding=24, spacing=12)
-        back = Button(text="← Today", size_hint_y=None, height=44)
+        back = Button(text="< Today", size_hint_y=None, height=44)
         back.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
         root.add_widget(back)
         root.add_widget(Label(text="Settings", font_size=24, size_hint_y=None, height=40))
@@ -610,7 +638,7 @@ class PomodoroApp(App):
 
     def open_task_menu(self, task):
         layout = BoxLayout(orientation="vertical", spacing=8, padding=12)
-        popup = Popup(title=task.content[:40], content=layout,
+        popup = Popup(title=_display(task.content, 40), content=layout,
                       size_hint=(0.85, None), height=380)
         start = Button(text="Start timer", size_hint_y=None, height=52)
         start.bind(on_release=lambda _b: (popup.dismiss(), self.open_timer(task)))
@@ -640,7 +668,7 @@ class PomodoroApp(App):
         popup.open()
 
     def complete_task(self, task):
-        content = task.content or "Task"
+        content = _display(task.content or "Task", 60)
         threading.Thread(target=self._complete_worker, args=(task, content), daemon=True).start()
 
     def _complete_worker(self, task, content):
