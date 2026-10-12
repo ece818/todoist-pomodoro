@@ -89,6 +89,7 @@ def compute_ui(w, h):
     timer_btn_h = max(88.0, h * 0.068)
     clock_font = min(max(h * 0.13, w * 0.24), w * 0.29)
     clock_font = max(min(132.0, w * 0.29), clock_font)
+    status_font = max(34.0, h * 0.02)
     popup_btn_h = max(64.0, h * 0.045)
     return {
         "row_h": row_h,
@@ -107,8 +108,9 @@ def compute_ui(w, h):
         "filter_font": max(28.0, top_h * 0.34),
         "nav_h": nav_h,
         "nav_font": min(max(30.0, nav_h * 0.36), w * 0.06),
-        "status_h": max(48.0, h * 0.018),
-        "status_font": max(30.0, h * 0.014),
+        "status_font": status_font,
+        "status_h": max(56.0, status_font + 18),
+        "banner_font": max(30.0, h * 0.012),
         "add_h": add_h,
         "add_font": max(24.0, add_h * 0.30),
         "add_btn_w": max(110.0, w * 0.11),
@@ -125,15 +127,15 @@ def compute_ui(w, h):
         # padding inside each of the 4 row buttons (row = w - 40 pad - 30 gaps).
         "timer_btn_font": min(max(26.0, timer_btn_h * 0.32),
                               ((w - 70) / 4 - 16) / 3.25),
-        "setup_title": min(max(30.0, h * 0.024), 64.0),
-        "setup_entry_h": max(56.0, h * 0.04),
-        "setup_entry_font": min(30.0, max(18.0, h * 0.011)),
-        "setup_btn_h": max(64.0, h * 0.05),
-        "setup_btn_font": min(30.0, max(20.0, h * 0.012)),
-        "stats_body": min(24.0, max(16.0, h * 0.008)),
+        "setup_title": min(max(40.0, h * 0.024), 76.0),
+        "setup_entry_h": max(64.0, h * 0.04),
+        "setup_entry_font": max(34.0, h * 0.013),
+        "setup_btn_h": max(72.0, h * 0.055),
+        "setup_btn_font": max(34.0, h * 0.013),
+        "stats_body": max(34.0, h * 0.013),
         "popup_menu_h": h * 0.30,
         "popup_btn_h": popup_btn_h,
-        "popup_btn_font": min(26.0, max(18.0, h * 0.01)),
+        "popup_btn_font": max(30.0, h * 0.012),
         "popup_date_h": h * 0.22,
     }
 
@@ -368,11 +370,13 @@ class StatusBanner(BoxLayout):
 
     def __init__(self, **kwargs):
         super().__init__(orientation="horizontal", size_hint_y=None, height=0, **kwargs)
-        self._label = Label(text="", halign="left", valign="middle")
+        self._label = Label(text="", halign="left", valign="middle",
+                            font_size=_U.get("banner_font", 30), color=_FG)
         self._label.bind(size=self._label.setter("text_size"))
         self._undo = _flat_button("Undo", _U.get("btn_font", 28),
-                                    size_hint_x=None,
-                                    width=_U.get("refresh_w", 110))
+                                  fg=_ACCENT,
+                                  size_hint_x=None,
+                                  width=_U.get("refresh_w", 110))
         self._undo.bind(on_release=self._on_undo)
         self._task = None
         self._hide_ev = None
@@ -383,6 +387,11 @@ class StatusBanner(BoxLayout):
 
     def show(self, text, task=None, seconds=5):
         app = App.get_running_app()
+        try:
+            self._label.font_size = _U.get("banner_font", 30)
+            self._undo.font_size = _U.get("btn_font", 28)
+        except Exception:
+            pass
         self._label.text = text
         self._task = task
         can_undo = task is not None
@@ -416,22 +425,22 @@ class SetupScreen(Screen):
         box = BoxLayout(orientation="vertical", padding=24, spacing=12)
         _paint_bg(box, _BG)
         box.add_widget(Label(text="Todoist Pomodoro", bold=True, color=_FG,
-                             font_size=_U.get("setup_title", 38),
-                             size_hint_y=None, height=_U.get("setup_title", 38) * 2))
+                             font_size=_U.get("setup_title", 40),
+                             size_hint_y=None, height=_U.get("setup_title", 40) * 2))
         box.add_widget(Label(
             text="Paste your Todoist personal API token.\nTodoist > Settings > Integrations > Developer.",
             color=_DIM,
-            font_size=_U.get("setup_entry_font", 22),
+            font_size=_U.get("setup_entry_font", 34),
             halign="center"))
         self._entry = _dark_entry("Todoist API token",
-                                  _U.get("setup_entry_font", 22),
+                                  _U.get("setup_entry_font", 34),
                                   size_hint_y=None,
                                   height=_U.get("setup_entry_h", 64))
         self._entry.password = True
         box.add_widget(self._entry)
         self._status = Label(text="", halign="center", color=_DIM)
         box.add_widget(self._status)
-        go = _flat_button("Connect", _U.get("setup_btn_font", 22),
+        go = _flat_button("Connect", _U.get("setup_btn_font", 34),
                           bg=_ACCENT, fg=_DARK_TEXT,
                           size_hint_y=None, height=_U.get("setup_btn_h", 72))
         go.bind(on_release=self._on_connect)
@@ -535,6 +544,7 @@ class TodayScreen(Screen):
         self._filter.bind(text=lambda _i, _v: self._apply_filter())
         top.add_widget(self._filter)
         self._refresh_btn = _flat_button("Refresh", _U.get("btn_font", 28),
+                                         bg=_ACCENT, fg=_DARK_TEXT,
                                          size_hint_x=None,
                                          width=_U.get("refresh_w", 120))
         self._refresh_btn.bind(on_release=lambda _b: self.refresh())
@@ -545,15 +555,15 @@ class TodayScreen(Screen):
                         height=_U.get("nav_h", 72), spacing=10)
         self._nav_buttons: list = []
         for label, screen in (("Timer", "timer"), ("Stats", "stats"), ("Settings", "settings")):
-            b = _flat_button(label, _U.get("nav_font", 30))
+            b = _flat_button(label, _U.get("nav_font", 30), fg=_ACCENT)
             b.bind(on_release=lambda _b, s=screen: self._go(s))
             self._nav_buttons.append(b)
             nav.add_widget(b)
         root.add_widget(nav)
 
         self._status = Label(text="Loading…", bold=True, size_hint_y=None,
-                             height=_U.get("status_h", 48),
-                             font_size=_U.get("status_font", 30),
+                             height=_U.get("status_h", 56),
+                             font_size=_U.get("status_font", 34),
                              color=_DIM, halign="left", valign="middle")
         self._status.bind(size=self._status.setter("text_size"))
         root.add_widget(self._status)
@@ -603,7 +613,7 @@ class TodayScreen(Screen):
             self._refresh_btn.font_size = _U.get("btn_font", 28)
             for b in self._nav_buttons:
                 b.font_size = _U.get("nav_font", 30)
-            self._status.font_size = _U.get("status_font", 30)
+            self._status.font_size = _U.get("status_font", 34)
             self._add_entry.font_size = _U.get("add_font", 20)
             self._add_btn.font_size = _U.get("add_font", 20)
         except Exception:
@@ -930,7 +940,7 @@ class StatsScreen(Screen):
         scroll = ScrollView(bar_width=8, bar_color=(0, 0, 0, 0),
                             bar_inactive_color=(0, 0, 0, 0),
                             scroll_type=["content"])
-        self._body = Label(text="", font_size=_U.get("stats_body", 18),
+        self._body = Label(text="", font_size=_U.get("stats_body", 34),
                            color=_FG,
                            halign="left", valign="top", size_hint_y=None)
         self._body.bind(texture_size=lambda _i, v: setattr(self._body, "height", v[1]),
@@ -985,32 +995,32 @@ class SettingsScreen(Screen):
                               font_size=_U.get("title_font", 30), color=_FG,
                               size_hint_y=None, height=_U.get("top_h", 72)))
         root.add_widget(Label(text="Focus minutes:", color=_FG,
-                              font_size=_U.get("setup_entry_font", 22),
-                              size_hint_y=None, height=_U.get("setup_entry_font", 22) * 2))
-        self._focus = _dark_entry("", _U.get("setup_entry_font", 22),
+                              font_size=_U.get("setup_entry_font", 34),
+                              size_hint_y=None, height=_U.get("setup_entry_font", 34) * 2))
+        self._focus = _dark_entry("", _U.get("setup_entry_font", 34),
                                   size_hint_y=None,
                                   height=_U.get("setup_entry_h", 64))
         self._focus.input_filter = "int"
         root.add_widget(self._focus)
         root.add_widget(Label(text="Break minutes:", color=_FG,
-                              font_size=_U.get("setup_entry_font", 22),
-                              size_hint_y=None, height=_U.get("setup_entry_font", 22) * 2))
-        self._break = _dark_entry("", _U.get("setup_entry_font", 22),
+                              font_size=_U.get("setup_entry_font", 34),
+                              size_hint_y=None, height=_U.get("setup_entry_font", 34) * 2))
+        self._break = _dark_entry("", _U.get("setup_entry_font", 34),
                                   size_hint_y=None,
                                   height=_U.get("setup_entry_h", 64))
         self._break.input_filter = "int"
         root.add_widget(self._break)
         root.add_widget(Label(text="Todoist API token:", color=_FG,
-                              font_size=_U.get("setup_entry_font", 22),
-                              size_hint_y=None, height=_U.get("setup_entry_font", 22) * 2))
-        self._token = _dark_entry("", _U.get("setup_entry_font", 22),
+                              font_size=_U.get("setup_entry_font", 34),
+                              size_hint_y=None, height=_U.get("setup_entry_font", 34) * 2))
+        self._token = _dark_entry("", _U.get("setup_entry_font", 34),
                                   size_hint_y=None,
                                   height=_U.get("setup_entry_h", 64))
         self._token.password = True
         root.add_widget(self._token)
         self._status = Label(text="", color=_DIM)
         root.add_widget(self._status)
-        save = _flat_button("Save", _U.get("setup_btn_font", 22),
+        save = _flat_button("Save", _U.get("setup_btn_font", 34),
                             bg=_ACCENT, fg=_DARK_TEXT,
                             size_hint_y=None, height=_U.get("setup_btn_h", 72))
         save.bind(on_release=lambda _b: self._save())
@@ -1146,20 +1156,20 @@ class PomodoroApp(App):
                       title_color=_FG, separator_color=_ACCENT,
                       content=layout,
                       size_hint=(0.9, None), height=_U.get("popup_menu_h", 480))
-        start = _flat_button("Start timer", _U.get("popup_btn_font", 26),
+        start = _flat_button("Start timer", _U.get("popup_btn_font", 30),
                              bg=_ACCENT, fg=_DARK_TEXT,
                              size_hint_y=None, height=_U.get("popup_btn_h", 68))
         start.bind(on_release=lambda _b: (popup.dismiss(), self.open_timer(task)))
         layout.add_widget(start)
-        done = _flat_button("Complete", _U.get("popup_btn_font", 26),
+        done = _flat_button("Complete", _U.get("popup_btn_font", 30),
                             size_hint_y=None, height=_U.get("popup_btn_h", 68))
         done.bind(on_release=lambda _b: (popup.dismiss(), self.complete_task(task)))
         layout.add_widget(done)
         for label, due in (("Tomorrow", "tomorrow"), ("Next week", "next week")):
-            b = _flat_button(f"Reschedule: {label}", _U.get("popup_btn_font", 26), size_hint_y=None, height=_U.get("popup_btn_h", 68))
+            b = _flat_button(f"Reschedule: {label}", _U.get("popup_btn_font", 30), size_hint_y=None, height=_U.get("popup_btn_h", 68))
             b.bind(on_release=lambda _b, d=due: (popup.dismiss(), self.reschedule_task(task, d)))
             layout.add_widget(b)
-        custom = _flat_button("Change date…", _U.get("popup_btn_font", 26), size_hint_y=None, height=_U.get("popup_btn_h", 68))
+        custom = _flat_button("Change date…", _U.get("popup_btn_font", 30), size_hint_y=None, height=_U.get("popup_btn_h", 68))
         custom.bind(on_release=lambda _b: (popup.dismiss(), self.open_custom_date(task)))
         layout.add_widget(custom)
         popup.open()
@@ -1168,14 +1178,14 @@ class PomodoroApp(App):
         layout = BoxLayout(orientation="vertical", spacing=10, padding=16)
         _paint_bg(layout, _BG)
         entry = _dark_entry("e.g. tomorrow, Mon 2pm",
-                            _U.get("setup_entry_font", 22),
+                            _U.get("setup_entry_font", 34),
                             size_hint_y=None, height=72)
         layout.add_widget(entry)
         popup = Popup(title="Change date", title_size=28, title_color=_FG,
                       separator_color=_ACCENT, content=layout,
                       size_hint=(0.9, None), height=_U.get("popup_date_h", 340))
         entry.bind(on_text_validate=lambda _i: (popup.dismiss(), self.reschedule_task(task, entry.text.strip())))
-        go = _flat_button("Save", _U.get("setup_btn_font", 22),
+        go = _flat_button("Save", _U.get("setup_btn_font", 34),
                           bg=_ACCENT, fg=_DARK_TEXT,
                           size_hint_y=None, height=_U.get("setup_btn_h", 72))
         go.bind(on_release=lambda _b: (popup.dismiss(), self.reschedule_task(task, entry.text.strip())))
