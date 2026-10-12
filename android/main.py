@@ -30,6 +30,7 @@ from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
+from kivy.uix.widget import Widget
 
 from actions import TaskActions
 from config import TimerSettings, load_timer_settings, save_timer_settings
@@ -212,6 +213,107 @@ def _dark_entry(hint, font_size, radius=14, **kwargs):
                   cursor_color=_ACCENT, padding=[16, 12], **kwargs)
     _paint_bg(t, (0.10, 0.10, 0.14, 1), radius=radius)
     return t
+
+
+class FastScrollRail(Widget):
+    """Slim thumb, wide grab zone: hold-and-pull fast scrolling.
+
+    The stock ScrollView bar couples look and hit-area (thin = pretty
+    but ungrabbable). This rail is a fixed-width touch strip showing a
+    thin accent pill sized from the viewport fraction; dragging anywhere
+    in the strip drives the ScrollView's scroll_y directly.
+    """
+
+    def __init__(self, scrollview, width=72, **kwargs):
+        super().__init__(size_hint_x=None, width=width, **kwargs)
+        self.sv = scrollview
+        with self.canvas:
+            Color(0.27, 0.28, 0.35, 0.55)
+            self._track = RoundedRectangle(pos=self.pos, size=self.size,
+                                           radius=[8])
+            Color(*_ACCENT)
+            self._thumb = RoundedRectangle(pos=self.pos, size=(14, 100),
+                                           radius=[7])
+        self.bind(pos=lambda *_a: self._redraw(),
+                  size=lambda *_a: self._redraw())
+        try:
+            scrollview.bind(scroll_y=lambda *_a: self._redraw())
+            for child in list(scrollview.children):
+                try:
+                    child.bind(minimum_height=lambda *_a: self._redraw())
+                    child.bind(height=lambda *_a: self._redraw())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self._redraw()
+
+    def _redraw(self, *_args) -> None:
+        try:
+            box = self.sv
+            content = 1.0
+            if box.children:
+                try:
+                    content = max(1.0, float(box.children[0].height or 0))
+                except Exception:
+                    pass
+            viewport = max(1.0, float(box.height or 0))
+            frac = min(1.0, viewport / max(content, viewport))
+            try:
+                sy = min(1.0, max(0.0, float(box.scroll_y)))
+            except Exception:
+                sy = 1.0
+            H = float(self.height or 0)
+            if frac >= 1.0 or H <= 0:
+                self._track.size = (0, 0)
+                self._thumb.size = (0, 0)
+                return
+            self._track.pos = (self.x + (self.width - 10) / 2, self.y)
+            self._track.size = (10, H)
+            th = max(80.0, frac * H)
+            self._thumb.pos = (self.x + (self.width - 14) / 2,
+                               self.y + sy * (H - th))
+            self._thumb.size = (14, th)
+        except Exception:
+            pass
+
+    def on_touch_down(self, touch):
+        try:
+            if self.collide_point(*touch.pos):
+                touch.grab(self)
+                self._drag_to(touch.y)
+                return True
+        except Exception:
+            pass
+        return super().on_touch_down(touch)
+
+    def on_touch_move(self, touch):
+        if touch.grab_current is self:
+            try:
+                self._drag_to(touch.y)
+            except Exception:
+                pass
+            return True
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            try:
+                touch.ungrab(self)
+            except Exception:
+                pass
+            return True
+        return super().on_touch_up(touch)
+
+    def _drag_to(self, y: float) -> None:
+        try:
+            H = float(self.height or 0)
+            if H <= 0:
+                return
+            rel = (float(y) - float(self.y)) / H
+            self.sv.scroll_y = min(1.0, max(0.0, rel))
+        except Exception:
+            pass
 
 
 class StatusBanner(BoxLayout):
@@ -408,14 +510,17 @@ class TodayScreen(Screen):
                              color=_DIM, halign="left", valign="middle")
         self._status.bind(size=self._status.setter("text_size"))
         root.add_widget(self._status)
-        scroll = ScrollView(bar_width=28, bar_margin=4, bar_color=_ACCENT,
-                            bar_inactive_color=_DIM,
-                            scroll_type=["bars", "content"])
-        self._list = GridLayout(cols=1, size_hint_y=None, spacing=8,
-                                padding=[0, 0, 56, 0])
+        list_row = BoxLayout(orientation="horizontal", spacing=0)
+        scroll = ScrollView(bar_width=8, bar_color=(0, 0, 0, 0),
+                            bar_inactive_color=(0, 0, 0, 0),
+                            scroll_type=["content"])
+        self._list = GridLayout(cols=1, size_hint_y=None, spacing=8)
         self._list.bind(minimum_height=self._list.setter("height"))
         scroll.add_widget(self._list)
-        root.add_widget(scroll)
+        list_row.add_widget(scroll)
+        self._rail = FastScrollRail(scroll)
+        list_row.add_widget(self._rail)
+        root.add_widget(list_row)
 
         add_row = BoxLayout(orientation="horizontal", size_hint_y=None,
                             height=_U.get("add_h", 76), spacing=10)
@@ -775,16 +880,19 @@ class StatsScreen(Screen):
         refresh.bind(on_release=lambda _b: self.refresh())
         top.add_widget(refresh)
         root.add_widget(top)
-        scroll = ScrollView(bar_width=28, bar_margin=4, bar_color=_ACCENT,
-                            bar_inactive_color=_DIM,
-                            scroll_type=["bars", "content"])
+        stats_row = BoxLayout(orientation="horizontal", spacing=0)
+        scroll = ScrollView(bar_width=8, bar_color=(0, 0, 0, 0),
+                            bar_inactive_color=(0, 0, 0, 0),
+                            scroll_type=["content"])
         self._body = Label(text="", font_size=_U.get("stats_body", 18),
                            color=_FG,
                            halign="left", valign="top", size_hint_y=None)
         self._body.bind(texture_size=lambda _i, v: setattr(self._body, "height", v[1]),
-                        width=lambda _i, v: setattr(self._body, "text_size", (v - 64, None)))
+                        width=lambda _i, v: setattr(self._body, "text_size", (v, None)))
         scroll.add_widget(self._body)
-        root.add_widget(scroll)
+        stats_row.add_widget(scroll)
+        stats_row.add_widget(FastScrollRail(scroll))
+        root.add_widget(stats_row)
         self.add_widget(root)
 
     def on_pre_enter(self):
