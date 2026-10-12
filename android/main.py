@@ -122,7 +122,7 @@ class SetupScreen(Screen):
         except TodoistAuthError:
             Clock.schedule_once(lambda _dt: setattr(self._status, "text", "Invalid token."))
         except Exception as exc:
-            Clock.schedule_once(lambda _dt: setattr(self._status, "text", f"Failed: {exc}"))
+            Clock.schedule_once(lambda _dt, _msg=str(exc): setattr(self._status, "text", f"Failed: {_msg}"))
         else:
             Clock.schedule_once(lambda _dt: App.get_running_app().finish_setup(token))
 
@@ -221,6 +221,11 @@ class TodayScreen(Screen):
 
     def _worker(self):
         app = App.get_running_app()
+        if getattr(app, "store", None) is None:
+            # Connect still in flight (first launch): wait for it.
+            Clock.schedule_once(
+                lambda _dt: setattr(self._status, "text", "Connecting…"))
+            return
         try:
             tasks = app.store.refresh_today()
             try:
@@ -236,7 +241,7 @@ class TodayScreen(Screen):
         except TodoistAuthError:
             Clock.schedule_once(lambda _dt: setattr(self._status, "text", "Token invalid — update in Settings."))
         except Exception as exc:
-            Clock.schedule_once(lambda _dt: setattr(self._status, "text", f"Failed: {exc}"))
+            Clock.schedule_once(lambda _dt, _msg=str(exc): setattr(self._status, "text", f"Failed: {_msg}"))
         else:
             Clock.schedule_once(lambda _dt: self._show(tasks, metas))
 
@@ -271,7 +276,7 @@ class TodayScreen(Screen):
         try:
             app.actions.quick_add(text)
         except Exception as exc:
-            Clock.schedule_once(lambda _dt: self.banner.show(f"Could not add: {exc}", None, 5))
+            Clock.schedule_once(lambda _dt, _msg=str(exc): self.banner.show(f"Could not add: {_msg}", None, 5))
         else:
             Clock.schedule_once(lambda _dt: self.refresh())
 
@@ -526,7 +531,7 @@ class PomodoroApp(App):
         self.sm.add_widget(StatsScreen())
         self.sm.add_widget(SettingsScreen())
         if self.token:
-            self._connect(self.token, lambda: self._go("today"),
+            self._connect(self.token, self._on_first_connect,
                           lambda msg: self.today.banner.show(msg, None, 5))
         else:
             self.sm.add_widget(SetupScreen())
@@ -549,8 +554,11 @@ class PomodoroApp(App):
 
     def finish_setup(self, token):
         self._write_token(token)
-        self._connect(token, lambda: self._go("today"),
-                      lambda msg: None)
+        self._connect(token, self._on_first_connect, lambda msg: None)
+
+    def _on_first_connect(self):
+        self._go("today")
+        self.today.refresh()
 
     def switch_token(self, token):
         self.token = token
@@ -564,7 +572,7 @@ class PomodoroApp(App):
                 store = SyncStore(client)
                 store.refresh_projects()
             except Exception as exc:
-                Clock.schedule_once(lambda _dt: on_fail(f"Connect failed: {exc}"))
+                Clock.schedule_once(lambda _dt, _msg=str(exc): on_fail(f"Connect failed: {_msg}"))
             else:
                 def apply(_dt):
                     self.token = token
@@ -640,7 +648,7 @@ class PomodoroApp(App):
             self.store.close(task)
         except Exception as exc:
             Clock.schedule_once(
-                lambda _dt: self.today.banner.show(f"Could not complete: {exc}", None, 5))
+                lambda _dt, _msg=str(exc): self.today.banner.show(f"Could not complete: {_msg}", None, 5))
         else:
             task_id = str(task.id)
             def apply(_dt):
@@ -657,7 +665,7 @@ class PomodoroApp(App):
             self.store.reopen(task)
         except Exception as exc:
             Clock.schedule_once(
-                lambda _dt: self.today.banner.show(f"Could not undo: {exc}", None, 5))
+                lambda _dt, _msg=str(exc): self.today.banner.show(f"Could not undo: {_msg}", None, 5))
         else:
             Clock.schedule_once(lambda _dt: self.today.refresh())
             Clock.schedule_once(
@@ -674,7 +682,7 @@ class PomodoroApp(App):
             self.actions.reschedule(task, due_string.strip())
         except Exception as exc:
             Clock.schedule_once(
-                lambda _dt: self.today.banner.show(f"Could not reschedule: {exc}", None, 5))
+                lambda _dt, _msg=str(exc): self.today.banner.show(f"Could not reschedule: {_msg}", None, 5))
         else:
             Clock.schedule_once(lambda _dt: self.today.refresh())
             Clock.schedule_once(
