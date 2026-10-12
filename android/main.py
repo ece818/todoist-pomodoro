@@ -103,12 +103,12 @@ def compute_ui(w, h):
         "title_font": max(28.0, top_h * 0.44),
         "title_w": max(96.0, w * 0.11),
         "refresh_w": max(110.0, w * 0.13),
-        "btn_font": max(26.0, top_h * 0.32),
-        "filter_font": max(26.0, top_h * 0.32),
+        "btn_font": min(max(28.0, top_h * 0.34), w * 0.06),
+        "filter_font": max(28.0, top_h * 0.34),
         "nav_h": nav_h,
-        "nav_font": max(28.0, nav_h * 0.36),
-        "status_h": max(40.0, h * 0.016),
-        "status_font": max(24.0, h * 0.011),
+        "nav_font": min(max(30.0, nav_h * 0.36), w * 0.06),
+        "status_h": max(48.0, h * 0.018),
+        "status_font": max(30.0, h * 0.014),
         "add_h": add_h,
         "add_font": max(24.0, add_h * 0.30),
         "add_btn_w": max(110.0, w * 0.11),
@@ -370,7 +370,7 @@ class StatusBanner(BoxLayout):
         super().__init__(orientation="horizontal", size_hint_y=None, height=0, **kwargs)
         self._label = Label(text="", halign="left", valign="middle")
         self._label.bind(size=self._label.setter("text_size"))
-        self._undo = _flat_button("Undo", _U.get("btn_font", 26),
+        self._undo = _flat_button("Undo", _U.get("btn_font", 28),
                                     size_hint_x=None,
                                     width=_U.get("refresh_w", 110))
         self._undo.bind(on_release=self._on_undo)
@@ -534,7 +534,7 @@ class TodayScreen(Screen):
                                    _U.get("filter_font", 20))
         self._filter.bind(text=lambda _i, _v: self._apply_filter())
         top.add_widget(self._filter)
-        self._refresh_btn = _flat_button("Refresh", _U.get("btn_font", 26),
+        self._refresh_btn = _flat_button("Refresh", _U.get("btn_font", 28),
                                          size_hint_x=None,
                                          width=_U.get("refresh_w", 120))
         self._refresh_btn.bind(on_release=lambda _b: self.refresh())
@@ -545,15 +545,15 @@ class TodayScreen(Screen):
                         height=_U.get("nav_h", 72), spacing=10)
         self._nav_buttons: list = []
         for label, screen in (("Timer", "timer"), ("Stats", "stats"), ("Settings", "settings")):
-            b = _flat_button(label, _U.get("nav_font", 28))
+            b = _flat_button(label, _U.get("nav_font", 30))
             b.bind(on_release=lambda _b, s=screen: self._go(s))
             self._nav_buttons.append(b)
             nav.add_widget(b)
         root.add_widget(nav)
 
         self._status = Label(text="Loading…", bold=True, size_hint_y=None,
-                             height=_U.get("status_h", 36),
-                             font_size=_U.get("status_font", 24),
+                             height=_U.get("status_h", 48),
+                             font_size=_U.get("status_font", 30),
                              color=_DIM, halign="left", valign="middle")
         self._status.bind(size=self._status.setter("text_size"))
         root.add_widget(self._status)
@@ -600,10 +600,10 @@ class TodayScreen(Screen):
         try:
             self._title.font_size = _U.get("title_font", 30)
             self._filter.font_size = _U.get("filter_font", 20)
-            self._refresh_btn.font_size = _U.get("btn_font", 26)
+            self._refresh_btn.font_size = _U.get("btn_font", 28)
             for b in self._nav_buttons:
-                b.font_size = _U.get("nav_font", 28)
-            self._status.font_size = _U.get("status_font", 24)
+                b.font_size = _U.get("nav_font", 30)
+            self._status.font_size = _U.get("status_font", 30)
             self._add_entry.font_size = _U.get("add_font", 20)
             self._add_btn.font_size = _U.get("add_font", 20)
         except Exception:
@@ -614,9 +614,8 @@ class TodayScreen(Screen):
             pass
 
     def _go(self, screen):
-        if screen == "timer" and App.get_running_app().timer_task is None:
-            self.banner.show("Pick a task first (tap its ··· → Start timer).", None, 4)
-            return
+        # Timer opens even with no task bound (shows "No task", Mark-done
+        # stays disabled until a task is picked).
         self.manager.current = screen
 
     def on_pre_enter(self):
@@ -917,12 +916,12 @@ class StatsScreen(Screen):
         _paint_bg(root, _BG)
         top = BoxLayout(orientation="horizontal", size_hint_y=None,
                         height=_U.get("top_h", 72), spacing=10)
-        back = _flat_button("< Today", _U.get("btn_font", 26),
+        back = _flat_button("< Today", _U.get("btn_font", 28),
                             size_hint_x=None, width=_U.get("title_w", 120))
         back.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
         top.add_widget(back)
         top.add_widget(Label(text="Stats", bold=True, font_size=_U.get("title_font", 30), color=_FG, halign="left"))
-        refresh = _flat_button("Refresh", _U.get("btn_font", 26),
+        refresh = _flat_button("Refresh", _U.get("btn_font", 28),
                                size_hint_x=None, width=_U.get("refresh_w", 110))
         refresh.bind(on_release=lambda _b: self.refresh())
         top.add_widget(refresh)
