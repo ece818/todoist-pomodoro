@@ -21,6 +21,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from sync import SyncStore
 from todoist import Task, TodoistAuthError, TodoistError
+from ui_common import show_reschedule_dialog
 
 
 # Preset labels with the due_string each sends to TaskActions.reschedule.
@@ -367,6 +368,20 @@ class TodayPanel(Gtk.Box):
             target=self._add_worker, args=(content,), daemon=True
         ).start()
 
+    def _on_check_toggled(self, btn: Gtk.CheckButton, task: Task) -> None:
+        if getattr(btn, "_firing", False):
+            return
+        if not btn.get_active():
+            return  # uncheck: no-op
+        # Reset the visual state first (guarded against re-entrancy),
+        # then run the normal explicit completion flow.
+        btn._firing = True  # type: ignore[attr-defined]
+        try:
+            btn.set_active(False)
+        finally:
+            btn._firing = False  # type: ignore[attr-defined]
+        self._complete_task(task)
+
     def _on_row_activated(self, _box: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         task = getattr(row, "_task", None)
         if task is not None and self._on_task_selected is not None:
@@ -498,6 +513,10 @@ class TodayPanel(Gtk.Box):
         task = self._row_task(row)
         if task is None:
             return
+        self._complete_task(task)
+
+    def _complete_task(self, task: Task) -> None:
+        """Explicit completion: celebration flow first, worker fallback."""
         # Explicit flow first: same callback the timer's Mark-done uses.
         if self._on_mark_done is not None:
             try:
@@ -529,54 +548,10 @@ class TodayPanel(Gtk.Box):
             parent = row.get_root()
         except Exception:
             parent = None
-        dlg = Gtk.Dialog(title="Change date…")
-        try:
-            if isinstance(parent, Gtk.Window):
-                dlg.set_transient_for(parent)
-        except Exception:
-            pass
-        dlg.set_modal(True)
-        dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        dlg.add_button("Apply", Gtk.ResponseType.APPLY)
-        dlg.set_default_response(Gtk.ResponseType.APPLY)
-        try:
-            area = dlg.get_content_area()
-        except Exception:
-            area = None
-        entry = Gtk.Entry()
-        entry.set_placeholder_text("e.g. tomorrow, next Monday, 2026-10-20")
-        entry.set_hexpand(True)
-        entry.set_activates_default(True)
-        if area is not None:
-            try:
-                area.set_spacing(8)
-            except Exception:
-                pass
-            area.append(entry)
-        else:
-            dlg.set_child(entry)
-
-        def _on_response(d: Gtk.Dialog, resp: int) -> None:
-            if resp == Gtk.ResponseType.APPLY:
-                due = entry.get_text().strip()
-                if due:
-                    self._menu_reschedule(row, due)
-                else:
-                    self._set_status("Enter a date like 'tomorrow'.")
-            try:
-                d.close()
-            except Exception:
-                pass
-
-        dlg.connect("response", _on_response)
-        try:
-            dlg.present()
-        except Exception:
-            pass
-        try:
-            entry.grab_focus()
-        except Exception:
-            pass
+        show_reschedule_dialog(
+            parent if isinstance(parent, Gtk.Window) else None,
+            lambda due: self._menu_reschedule(row, due),
+        )
 
     # -- menu workers (never touch GTK directly; marshal via idle_add) -
 
@@ -685,13 +660,11 @@ class TodayPanel(Gtk.Box):
         box.set_margin_end(8)
 
         check = Gtk.CheckButton()
-        check.set_tooltip_text("Select for timer")
-        # Selecting (not completing) — completion is explicit via Celebration.
+        check.set_tooltip_text("Mark complete")
+        # Checking completes the task (celebration flow); uncheck is a
+        # no-op. Row click still selects the task for the timer.
         check.connect(
-            "toggled",
-            lambda _btn, t=task: self._on_task_selected(t)
-            if self._on_task_selected is not None
-            else None,
+            "toggled", lambda btn, t=task: self._on_check_toggled(btn, t)
         )
         box.append(check)
 

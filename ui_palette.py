@@ -24,7 +24,11 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 
 from todoist import TodoistAuthError, TodoistError
-from ui_common import add_close_shortcuts, header_with_close
+from ui_common import (
+    add_close_shortcuts,
+    header_with_close,
+    show_reschedule_dialog,
+)
 
 
 def _is_overdue(task) -> bool:
@@ -477,53 +481,9 @@ class PaletteWindow(Gtk.Window):
     def _menu_custom_date(self, row: Gtk.ListBoxRow) -> None:
         if getattr(row, "_task", None) is None:
             return
-        dlg = Gtk.Dialog(title="Change date…")
-        try:
-            dlg.set_transient_for(self)
-        except Exception:
-            pass
-        dlg.set_modal(True)
-        dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        dlg.add_button("Apply", Gtk.ResponseType.APPLY)
-        dlg.set_default_response(Gtk.ResponseType.APPLY)
-        try:
-            area = dlg.get_content_area()
-        except Exception:
-            area = None
-        entry = Gtk.Entry()
-        entry.set_placeholder_text("e.g. tomorrow, next Monday, 2026-10-20")
-        entry.set_hexpand(True)
-        entry.set_activates_default(True)
-        if area is not None:
-            try:
-                area.set_spacing(8)
-            except Exception:
-                pass
-            area.append(entry)
-        else:
-            dlg.set_child(entry)
-
-        def _on_response(d: Gtk.Dialog, resp: int) -> None:
-            if resp == Gtk.ResponseType.APPLY:
-                due = entry.get_text().strip()
-                if due:
-                    self._menu_reschedule(row, due)
-                else:
-                    self._set_status("Enter a date like 'tomorrow'.")
-            try:
-                d.close()
-            except Exception:
-                pass
-
-        dlg.connect("response", _on_response)
-        try:
-            dlg.present()
-        except Exception:
-            pass
-        try:
-            entry.grab_focus()
-        except Exception:
-            pass
+        show_reschedule_dialog(
+            self, lambda due: self._menu_reschedule(row, due)
+        )
 
     # -- menu workers (never touch GTK directly; marshal via idle_add) -
 

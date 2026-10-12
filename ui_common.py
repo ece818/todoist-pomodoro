@@ -34,6 +34,88 @@ def add_close_shortcuts(window: Gtk.Window) -> None:
     window.add_controller(controller)
 
 
+def show_reschedule_dialog(parent, on_apply) -> None:
+    """Date dialog: calendar pick + optional time, or free-text entry.
+
+    On Apply with free text present, that text is used verbatim (Todoist
+    parses "tomorrow", "Mon 2pm", …). Otherwise the calendar date plus
+    the optional time field are composed ("YYYY-MM-DD [time]").
+    ``on_apply`` receives the due string; blank is impossible by design.
+    """
+    dlg = Gtk.Dialog(title="Change date…")
+    try:
+        if isinstance(parent, Gtk.Window):
+            dlg.set_transient_for(parent)
+    except Exception:
+        pass
+    dlg.set_modal(True)
+    dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
+    dlg.add_button("Apply", Gtk.ResponseType.APPLY)
+    dlg.set_default_response(Gtk.ResponseType.APPLY)
+    try:
+        area = dlg.get_content_area()
+    except Exception:
+        area = None
+
+    body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    body.set_margin_top(12)
+    body.set_margin_bottom(12)
+    body.set_margin_start(12)
+    body.set_margin_end(12)
+
+    cal = Gtk.Calendar()
+    body.append(cal)
+
+    time_entry = Gtk.Entry()
+    time_entry.set_placeholder_text("Time — e.g. 2pm (optional)")
+    time_entry.set_activates_default(True)
+    body.append(time_entry)
+
+    free_entry = Gtk.Entry()
+    free_entry.set_placeholder_text("Or type it — e.g. tomorrow, Mon 2pm")
+    free_entry.set_hexpand(True)
+    free_entry.set_activates_default(True)
+    body.append(free_entry)
+
+    if area is not None:
+        area.append(body)
+    else:
+        dlg.set_child(body)
+
+    def _on_response(d: Gtk.Dialog, resp: int) -> None:
+        if resp == Gtk.ResponseType.APPLY:
+            free = free_entry.get_text().strip()
+            if free:
+                on_apply(free)
+            else:
+                try:
+                    moment = cal.get_date()
+                    day = (
+                        f"{moment.get_year():04d}-{moment.get_month():02d}-"
+                        f"{moment.get_day_of_month():02d}"
+                    )
+                except Exception:
+                    day = ""
+                picked_time = time_entry.get_text().strip()
+                due = f"{day} {picked_time}".strip() if day else picked_time
+                if due:
+                    on_apply(due)
+        try:
+            d.close()
+        except Exception:
+            pass
+
+    dlg.connect("response", _on_response)
+    try:
+        dlg.present()
+    except Exception:
+        pass
+    try:
+        free_entry.grab_focus()
+    except Exception:
+        pass
+
+
 def header_with_close(title: str) -> Gtk.HeaderBar:
     """A title bar with the window-manager close button enabled."""
     header = Gtk.HeaderBar()
