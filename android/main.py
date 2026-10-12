@@ -408,10 +408,11 @@ class TodayScreen(Screen):
                              color=_DIM, halign="left", valign="middle")
         self._status.bind(size=self._status.setter("text_size"))
         root.add_widget(self._status)
-        scroll = ScrollView(bar_width=24, bar_color=_ACCENT,
+        scroll = ScrollView(bar_width=56, bar_margin=8, bar_color=_ACCENT,
                             bar_inactive_color=_DIM,
                             scroll_type=["bars", "content"])
-        self._list = GridLayout(cols=1, size_hint_y=None, spacing=8)
+        self._list = GridLayout(cols=1, size_hint_y=None, spacing=8,
+                                padding=[0, 0, 72, 0])
         self._list.bind(minimum_height=self._list.setter("height"))
         scroll.add_widget(self._list)
         root.add_widget(scroll)
@@ -774,14 +775,14 @@ class StatsScreen(Screen):
         refresh.bind(on_release=lambda _b: self.refresh())
         top.add_widget(refresh)
         root.add_widget(top)
-        scroll = ScrollView(bar_width=24, bar_color=_ACCENT,
+        scroll = ScrollView(bar_width=56, bar_margin=8, bar_color=_ACCENT,
                             bar_inactive_color=_DIM,
                             scroll_type=["bars", "content"])
         self._body = Label(text="", font_size=_U.get("stats_body", 18),
                            color=_FG,
                            halign="left", valign="top", size_hint_y=None)
         self._body.bind(texture_size=lambda _i, v: setattr(self._body, "height", v[1]),
-                        width=lambda _i, v: setattr(self._body, "text_size", (v, None)))
+                        width=lambda _i, v: setattr(self._body, "text_size", (v - 80, None)))
         scroll.add_widget(self._body)
         root.add_widget(scroll)
         self.add_widget(root)
