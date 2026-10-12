@@ -440,6 +440,7 @@ class SetupScreen(Screen):
         box.add_widget(self._entry)
         self._status = Label(text="", halign="center", color=_DIM)
         box.add_widget(self._status)
+        box.add_widget(Widget(size_hint_y=1))
         go = _flat_button("Connect", _U.get("setup_btn_font", 34),
                           bg=_ACCENT, fg=_DARK_TEXT,
                           size_hint_y=None, height=_U.get("setup_btn_h", 72))
@@ -940,9 +941,12 @@ class StatsScreen(Screen):
         scroll = ScrollView(bar_width=8, bar_color=(0, 0, 0, 0),
                             bar_inactive_color=(0, 0, 0, 0),
                             scroll_type=["content"])
+        self._stats_scroll = scroll
         self._body = Label(text="", font_size=_U.get("stats_body", 34),
-                           color=_FG,
+                           color=_FG, line_height=1.6,
                            halign="left", valign="top", size_hint_y=None)
+        self._body.bind(texture_size=lambda *_a: self._fit_body())
+        scroll.bind(height=lambda *_a: self._fit_body())
         self._body.bind(texture_size=lambda _i, v: setattr(self._body, "height", v[1]),
                         width=lambda _i, v: setattr(self._body, "text_size", (v, None)))
         scroll.add_widget(self._body)
@@ -953,6 +957,21 @@ class StatsScreen(Screen):
 
     def on_pre_enter(self):
         self.refresh()
+
+    def _fit_body(self) -> None:
+        """Stats fill the page: body is at least as tall as the viewport."""
+        try:
+            tex_h = float(self._body.texture_size[1] or 0)
+        except Exception:
+            tex_h = 0.0
+        try:
+            view_h = float(self._stats_scroll.height or 0)
+        except Exception:
+            view_h = 0.0
+        try:
+            self._body.height = max(tex_h, view_h)
+        except Exception:
+            pass
 
     def refresh(self):
         try:
@@ -1020,6 +1039,7 @@ class SettingsScreen(Screen):
         root.add_widget(self._token)
         self._status = Label(text="", color=_DIM)
         root.add_widget(self._status)
+        root.add_widget(Widget(size_hint_y=1))
         save = _flat_button("Save", _U.get("setup_btn_font", 34),
                             bg=_ACCENT, fg=_DARK_TEXT,
                             size_hint_y=None, height=_U.get("setup_btn_h", 72))
