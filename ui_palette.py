@@ -24,6 +24,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk
 
 from todoist import TodoistAuthError, TodoistError
+from ui_common import add_close_shortcuts, header_with_close
 
 
 def _is_overdue(task) -> bool:
@@ -92,6 +93,8 @@ class PaletteWindow(Gtk.Window):
 
         self.set_title("Search tasks")
         self.set_modal(True)
+        self.set_titlebar(header_with_close("Search tasks"))
+        add_close_shortcuts(self)
         # ~600px wide, compact height; the window manager centers it.
         # (GTK4 has no portable "top-third" positioning for windows, so we
         # keep it short and let it center over the transient parent.)

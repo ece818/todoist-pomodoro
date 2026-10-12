@@ -26,6 +26,7 @@ from config import ConfigError, load_config
 from sync import FilterStore, SyncStore
 from todoist import TodoistClient
 from ui_celebrate import CelebrationWindow
+from ui_common import add_close_shortcuts
 from ui_palette import PaletteWindow
 from ui_timer import TimerView
 from ui_today import TodayPanel
@@ -56,7 +57,6 @@ class PomodoroApp(Adw.Application):
 
         self._stack = Gtk.Stack()
         self._stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
-
         today = TodayPanel(
             self._store, on_task_selected=self._on_task_selected
         )
@@ -80,7 +80,14 @@ class PomodoroApp(Adw.Application):
         timer_page.append(self._timer_view)
         self._stack.add_titled(timer_page, "timer", "Timer")
 
-        win.set_content(self._stack)
+        # Visible title bar with the window-manager close button.
+        toolbar_view = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(title="Todoist Pomodoro"))
+        toolbar_view.add_top_bar(header)
+        toolbar_view.set_content(self._stack)
+        win.set_content(toolbar_view)
+        add_close_shortcuts(win)
 
         palette_shortcut = Gtk.Shortcut.new(
             trigger=Gtk.ShortcutTrigger.parse_string("<Control>p"),

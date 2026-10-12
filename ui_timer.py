@@ -15,6 +15,8 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gio, Gdk, GLib, Gtk
 
+from ui_common import add_close_shortcuts
+
 
 def _format_seconds(total: int) -> str:
     total = max(0, int(total))
@@ -96,6 +98,7 @@ class FullscreenTimerWindow(Gtk.Window):
 
         self.set_child(box)
         self.connect("close-request", self._on_close_request)
+        add_close_shortcuts(self)
 
         key = Gtk.EventControllerKey()
         key.connect("key-pressed", self._on_key_pressed)

@@ -17,6 +17,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
 from todoist import TodoistAuthError, TodoistError
+from ui_common import add_close_shortcuts, header_with_close
 
 
 class CelebrationWindow(Gtk.Window):
@@ -32,6 +33,8 @@ class CelebrationWindow(Gtk.Window):
         super().__init__()
         self.set_title("Done!")
         self.set_default_size(420, 280)
+        self.set_titlebar(header_with_close("Done!"))
+        add_close_shortcuts(self)
         self._task = task
         self._on_complete = on_complete
         self._settling = False
