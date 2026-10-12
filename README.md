@@ -74,7 +74,21 @@ On first launch, paste the Todoist token when asked. arm64, targets API 34.
 | `sessions.py` | Session log, stats rollups, streak |
 | `actions.py` | Single command core: complete / reopen / reschedule / quick-add |
 | `android/` | Kivy port + buildozer spec (see above) |
+| `web/` | Browser build (stdlib server + SPA): same backend, all functions |
 | `docs/designs/` | Approved v1 + v2 design docs |
+
+## Website — run it
+
+Stdlib only, no new dependencies. Same backend as the desktop app
+(Today, timer + session log, stats, settings, palette + saved filters,
+projects, quick-add, complete/Undo, reschedule, pending retry).
+
+```bash
+python3 web/server.py --port 8000
+# → open http://localhost:8000
+```
+
+The timer never auto-completes — Mark-done is explicit, same as desktop.
 
 ## Notes
 

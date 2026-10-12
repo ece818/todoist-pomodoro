@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Todoist Pomodoro</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">🍅 Todoist Pomodoro</div>
+  <div class="top-actions">
+    <button id="btn-palette" title="Search every task (Ctrl+P)">⌘P Search</button>
+    <button id="btn-today">Today</button>
+    <button id="btn-timer">Timer</button>
+    <button id="btn-stats">Stats</button>
+    <button id="btn-settings">Settings</button>
+  </div>
+</header>
+
+<div id="auth-banner" class="banner hidden">Token invalid — open Settings to add a valid Todoist token.</div>
+
+<main id="views">
+  <!-- TODAY -->
+  <section id="view-today" class="view">
+    <div class="toolbar">
+      <h1>Today</h1>
+      <select id="project-filter" title="Show tasks from one project"><option value="">All projects</option></select>
+      <button id="btn-refresh" title="Reload tasks from Todoist">Refresh</button>
+    </div>
+    <input id="today-search" class="search" type="search" placeholder="Filter tasks…">
+    <div id="task-list" class="task-list"></div>
+    <div id="today-status" class="status"></div>
+    <div class="add-row">
+      <input id="add-input" type="text" placeholder="Try 'Call mom Mon 2pm…'">
+      <button id="btn-add">Add</button>
+      <button id="btn-retry" title="Retry queued offline adds">Retry <span id="pending-count"></span></button>
+    </div>
+  </section>
+
+  <!-- TIMER -->
+  <section id="view-timer" class="view hidden">
+    <button class="back" data-go="today">← Today</button>
+    <div class="timer-stage">
+      <div id="timer-task" class="timer-task">No task selected</div>
+      <div id="timer-clock" class="timer-clock">25:00</div>
+      <div id="timer-state" class="dim">Ready</div>
+      <div class="timer-controls">
+        <button id="t-start">Start</button>
+        <button id="t-pause" disabled>Pause</button>
+        <button id="t-reset">Reset</button>
+        <button id="t-break">Start Break</button>
+      </div>
+      <div class="timer-controls">
+        <button id="t-fullscreen">Fullscreen</button>
+        <button id="t-done" class="primary" disabled>Mark task done</button>
+      </div>
+      <div id="timer-meta" class="dim"></div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section id="view-stats" class="view hidden">
+    <button class="back" data-go="today">← Today</button>
+    <div class="toolbar"><h1>Stats</h1><button id="btn-stats-refresh">Refresh</button></div>
+    <div id="stats-summary" class="card"></div>
+    <h3>By project</h3><div id="stats-projects"></div>
+    <h3>By task</h3><div id="stats-tasks"></div>
+  </section>
+</main>
+
+<!-- PALETTE (Ctrl+P) -->
+<div id="palette" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><span>Search tasks</span><button class="x" data-close="palette">✕</button></div>
+    <div class="filter-row">
+      <select id="palette-filter"></select>
+      <input id="palette-filter-name" placeholder="Save query as…">
+      <button id="btn-save-filter">Save</button>
+    </div>
+    <input id="palette-search" class="search" type="search" placeholder="Type to search tasks…">
+    <div id="palette-list" class="task-list"></div>
+    <div id="palette-status" class="status"></div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="settings" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><span>Settings</span><button class="x" data-close="settings">✕</button></div>
+    <label>Focus (minutes) <input id="set-focus" type="number" min="1" max="180" value="25"></label>
+    <label>Short break (minutes) <input id="set-break" type="number" min="1" max="60" value="5"></label>
+    <div id="token-status" class="dim"></div>
+    <input id="set-token" type="password" placeholder="Paste new token to switch accounts">
+    <div class="dim">Todoist → Settings → Integrations → Developer</div>
+    <div class="row-end"><button id="btn-settings-save" class="primary">Save</button></div>
+  </div>
+</div>
+
+<!-- RESCHEDULE -->
+<div id="resched" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><span>Change date…</span><button class="x" data-close="resched">✕</button></div>
+    <input id="rs-date" type="date">
+    <input id="rs-time" placeholder="Time — e.g. 2pm (optional)">
+    <input id="rs-free" placeholder="Or type it — e.g. tomorrow, Mon 2pm">
+    <div class="row-end"><button id="btn-rs-save" class="primary">Save</button></div>
+  </div>
+</div>
+
+<!-- context menu -->
+<div id="ctx" class="ctx hidden"></div>
+
+<!-- bottom banner + Undo -->
+<div id="banner" class="toast hidden"><span id="banner-text"></span><button id="banner-undo" class="hidden">Undo</button></div>
+
+<script src="app.js"></script>
+</body>
+</html>
