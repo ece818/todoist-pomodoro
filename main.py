@@ -361,6 +361,7 @@ class PomodoroApp(Adw.Application):
             on_pick=self._open_task,
             filter_store=self._filter_store,
             actions=self._actions,
+            on_completed=self._stop_timer_for,
         )
         parent = self.get_active_window()
         if parent is not None:
@@ -399,9 +400,23 @@ class PomodoroApp(Adw.Application):
             )
         else:
             content = str(getattr(task, "content", "") or "Task")
-            GLib.idle_add(
-                self._show_banner, f"Completed: {content}", task, True
-            )
+            task_id = str(getattr(task, "id", "") or "")
+            GLib.idle_add(self._on_completed, task_id, f"Completed: {content}", task)
+
+    def _on_completed(self, task_id: str, banner_text: str, task) -> bool:
+        """Completion succeeded: stop a timer bound to it + confirm."""
+        self._stop_timer_for(task_id)
+        self._show_banner(banner_text, task, True)
+        return False
+
+    def _stop_timer_for(self, task_id) -> bool:
+        """Stop the timer view when it runs the completed task's clock."""
+        try:
+            if self._timer_view is not None:
+                return bool(self._timer_view.stop_if_bound(task_id))
+        except Exception:
+            pass
+        return False
 
     def _show_banner(
         self, text: str, task=None, undoable: bool = False, seconds: int = 5

@@ -319,6 +319,25 @@ class TimerView(Gtk.Box):
 
     # -- public ------------------------------------------------------
 
+    def stop_if_bound(self, task_id) -> bool:
+        """Stop and reset when the bound task was completed elsewhere.
+
+        Returns True when this view was running this task's timer.
+        """
+        task = self._task
+        if task is None or str(getattr(task, "id", "")) != str(task_id):
+            return False
+        if self._tick_id is None:
+            return False
+        # Log the work first (>= 60s counts as a partial session).
+        self._emit_session(False)
+        self._stop_ticking()
+        self._remaining = self._total
+        self._render()
+        self._show_idle_state()
+        self._state_label.set_text("Ready — task completed.")
+        return True
+
     def set_durations(self, focus_min: int, short_break_min: int) -> None:
         """Apply new durations (e.g. from Settings).
 

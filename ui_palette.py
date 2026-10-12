@@ -73,6 +73,8 @@ class PaletteWindow(Gtk.Window):
 
     :param store: backend SyncStore (network calls run in worker threads).
     :param on_pick: callback ``fn(task)`` fired on Enter/click, then closes.
+    :param on_completed: optional ``fn(task_id)`` fired after a menu
+        completion succeeds, so the owner can stop a timer bound to it.
     :param filter_store: optional ``sync.FilterStore`` enabling the saved-
         filter picker row; when None the filter UI is hidden.
     :param actions: optional ``actions.TaskActions`` driving the right-click
@@ -88,10 +90,11 @@ class PaletteWindow(Gtk.Window):
     _ALL_TASKS_LABEL = "All tasks"
     _CUSTOM_LABEL = "Custom…"
 
-    def __init__(self, store, on_pick: Optional[Callable] = None, filter_store=None, actions=None) -> None:
+    def __init__(self, store, on_pick: Optional[Callable] = None, filter_store=None, actions=None, on_completed=None) -> None:
         super().__init__()
         self._store = store
         self._on_pick = on_pick
+        self._on_completed = on_completed
         self._filters = filter_store
         self._actions = actions
         self._candidates: list = []
@@ -529,6 +532,11 @@ class PaletteWindow(Gtk.Window):
             self._set_status("Task completed.")
         except Exception:
             pass
+        if self._on_completed is not None:
+            try:
+                self._on_completed(task_id)
+            except Exception:
+                pass
         return False
 
     def _on_rescheduled(self, old_task, updated) -> bool:
