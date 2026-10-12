@@ -246,12 +246,14 @@ class TimerView(Gtk.Box):
         self._short_break_min = short_break_min
         self._on_done = on_done
         self._on_mark_done: Optional[Callable] = None
+        self._on_session: Optional[Callable] = None
         self._task = task
 
         self._mode = self.MODE_FOCUS
         self._total = focus_min * 60
         self._remaining = self._total
         self._tick_id: Optional[int] = None
+        self._session_start: Optional[str] = None
         self._fullscreen_win: Optional[FullscreenTimerWindow] = None
 
         self.set_margin_top(24)
@@ -351,6 +353,14 @@ class TimerView(Gtk.Box):
     def connect_mark_done(self, callback: Callable) -> None:
         self.set_on_mark_done(callback)
 
+    def set_on_session(self, callback: Optional[Callable]) -> None:
+        """Register ``fn(task, elapsed_sec, finished, started_at)``.
+
+        Fired when a focus countdown ends (finished=True) or is reset
+        partway with >= 60s elapsed (finished=False). Breaks never log.
+        """
+        self._on_session = callback
+
     # -- internals ----------------------------------------------------
 
     def _task_name(self) -> str:
@@ -374,6 +384,15 @@ class TimerView(Gtk.Box):
 
     def _start_ticking(self) -> None:
         self._stop_ticking()
+        if self._session_start is None:
+            try:
+                from datetime import datetime as _dt
+
+                self._session_start = _dt.now().astimezone().isoformat(
+                    timespec="seconds"
+                )
+            except Exception:
+                self._session_start = None
         self._tick_id = GLib.timeout_add_seconds(1, self._on_tick)
         self._start_button.set_sensitive(False)
         self._pause_button.set_sensitive(True)
@@ -399,6 +418,22 @@ class TimerView(Gtk.Box):
         self._render()
         return True
 
+    def _emit_session(self, finished: bool) -> None:
+        """Report a focus block to the session logger, if registered."""
+        if self._mode != self.MODE_FOCUS or self._on_session is None:
+            return
+        elapsed = self._total - self._remaining
+        if elapsed < 60:
+            return
+        try:
+            self._on_session(
+                self._task, elapsed, finished, self._session_start
+            )
+        except Exception:
+            pass
+        finally:
+            self._session_start = None
+
     def _render(self) -> None:
         self._clock_label.set_text(_format_seconds(self._remaining))
         if self._fullscreen_win is not None:
@@ -410,6 +445,7 @@ class TimerView(Gtk.Box):
     def _finish(self) -> None:
         """Timer end: stop, sound, rest-state. Never completes any task."""
         self._stop_ticking()
+        self._emit_session(True)
         play_end_sound()
         self._start_button.set_sensitive(False)
         self._start_button.set_label("Start")
@@ -445,6 +481,8 @@ class TimerView(Gtk.Box):
         self._state_label.set_text("Paused")
 
     def _on_reset_clicked(self, _button: Gtk.Button) -> None:
+        # Log partial focus work (>= 60s) before discarding the countdown.
+        self._emit_session(False)
         self._stop_ticking()
         self._remaining = self._total
         self._render()
@@ -453,6 +491,8 @@ class TimerView(Gtk.Box):
 
     def _on_break_clicked(self, _button: Gtk.Button) -> None:
         # Plain short-break countdown: no task binding, no completion.
+        # Log any focus work in progress first (>= 60s counts as partial).
+        self._emit_session(False)
         self._switch_mode(self.MODE_BREAK, autostart=True)
 
     def _on_fullscreen_clicked(self, _button: Gtk.Button) -> None:

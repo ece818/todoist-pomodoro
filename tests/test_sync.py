@@ -548,3 +548,32 @@ def test_project_name_mapping_and_search_matches_project():
     ]
     ids = [t.id for t in store.search("work")]
     assert ids == ["t1"]
+
+
+def test_session_log_and_stats(tmp_path):
+    from datetime import datetime
+    from sessions import SessionStore, format_duration
+
+    path = tmp_path / "sessions.jsonl"
+    store = SessionStore(path)
+    today = datetime.now().astimezone().date()
+    store.log(task_id="t1", content="Write report", project_name="Work",
+              duration_sec=1500, finished=True)
+    store.log(task_id="t2", content="Read book", project_name="Personal",
+              duration_sec=300, finished=False)
+    data = store.stats(today=today)
+    assert data["today_sec"] == 1800
+    assert data["week_sec"] == 1800
+    assert data["by_project"] == {"Work": 1500, "Personal": 300}
+    assert data["by_task"]["Write report"] == 1500
+    assert data["streak"] == 1
+    assert format_duration(5400) == "1h 30m"
+    assert format_duration(1500) == "25m"
+    assert format_duration(45) == "45s"
+    # corrupt lines are skipped, rest still counts
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write("{not json\n")
+    assert store.stats(today=today)["today_sec"] == 1800
+    # missing id falls back to "(no project)"
+    store.log(content="loose task", duration_sec=60)
+    assert store.stats(today=today)["by_project"].get("(no project)") == 60

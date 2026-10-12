@@ -29,12 +29,14 @@ from config import (
     load_timer_settings,
     save_timer_settings,
 )
+from sessions import SessionStore
 from sync import FilterStore, SyncStore
 from todoist import TodoistClient
 from ui_celebrate import CelebrationWindow
 from ui_common import add_close_shortcuts
 from ui_palette import PaletteWindow
 from ui_settings import SettingsDialog
+from ui_stats import StatsPanel
 from ui_timer import TimerView
 from ui_today import TodayPanel
 
@@ -50,10 +52,12 @@ class PomodoroApp(Adw.Application):
         filter_store: FilterStore | None = None,
         settings: TimerSettings | None = None,
         settings_path=None,
+        session_store: SessionStore | None = None,
     ) -> None:
         super().__init__(application_id="dev.todoist.pomodoro")
         self._store = store
         self._filter_store = filter_store
+        self._session_store = session_store
         self._settings = settings or TimerSettings(
             focus_min=focus_min, short_break_min=short_break_min
         )
@@ -62,6 +66,7 @@ class PomodoroApp(Adw.Application):
         self._short_break_min = short_break_min
         self._stack: Gtk.Stack | None = None
         self._timer_view: TimerView | None = None
+        self._stats_panel: StatsPanel | None = None
 
     def do_activate(self) -> None:
         win = Adw.ApplicationWindow(application=self)
@@ -81,6 +86,8 @@ class PomodoroApp(Adw.Application):
             on_done=self._on_timer_done,
         )
         self._timer_view.set_on_mark_done(self._on_mark_task_done)
+        if self._session_store is not None:
+            self._timer_view.set_on_session(self._on_session_logged)
 
         timer_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         back_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -93,10 +100,30 @@ class PomodoroApp(Adw.Application):
         timer_page.append(self._timer_view)
         self._stack.add_titled(timer_page, "timer", "Timer")
 
+        if self._session_store is not None:
+            stats_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+            stats_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            stats_bar.set_margin_top(8)
+            stats_bar.set_margin_start(8)
+            stats_back = Gtk.Button(label="← Today")
+            stats_back.connect("clicked", lambda _b: self._show("today"))
+            stats_bar.append(stats_back)
+            stats_page.append(stats_bar)
+            self._stats_panel = StatsPanel(
+                self._session_store,
+                project_name=self._store.project_name,
+            )
+            stats_page.append(self._stats_panel)
+            self._stack.add_titled(stats_page, "stats", "Stats")
+
         # Visible title bar with the window-manager close button.
         toolbar_view = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle(title="Todoist Pomodoro"))
+        stats_button = Gtk.Button(label="Stats")
+        stats_button.set_tooltip_text("Focus stats")
+        stats_button.connect("clicked", self._on_stats_clicked)
+        header.pack_end(stats_button)
         settings_button = Gtk.Button(label="Settings")
         settings_button.set_tooltip_text("Timer durations")
         settings_button.connect("clicked", self._on_settings_clicked)
@@ -125,7 +152,40 @@ class PomodoroApp(Adw.Application):
 
     def _show(self, name: str) -> None:
         if self._stack is not None:
+            if name == "stats" and self._stats_panel is not None:
+                self._stats_panel.refresh()
             self._stack.set_visible_child_name(name)
+
+    def _on_stats_clicked(self, _button: Gtk.Button) -> None:
+        self._show("stats")
+
+    def _on_session_logged(
+        self, task, elapsed_sec: int, finished: bool, started_at
+    ) -> None:
+        if self._session_store is None:
+            return
+        try:
+            project_id = str(getattr(task, "project_id", "") or "")
+            content = str(getattr(task, "content", "") or "")
+            task_id = str(getattr(task, "id", "") or "")
+        except Exception:
+            project_id, content, task_id = "", "", ""
+        try:
+            project_name = self._store.project_name(project_id)
+        except Exception:
+            project_name = ""
+        try:
+            self._session_store.log(
+                task_id=task_id,
+                content=content or "(no task)",
+                project_id=project_id,
+                project_name=project_name,
+                duration_sec=elapsed_sec,
+                finished=finished,
+                started_at=started_at,
+            )
+        except Exception:
+            pass
 
     def _on_task_selected(self, task) -> None:
         # Selecting a task opens the TimerView bound to it.
@@ -212,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
     store = SyncStore(client, state_path=state_dir / "pending.json")
     store.load_state()
     filter_store = FilterStore(state_dir / "filters.json")
+    session_store = SessionStore(state_dir / "sessions.jsonl")
     settings_path = state_dir / "settings.json"
     settings = load_timer_settings(
         settings_path,
@@ -225,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         filter_store=filter_store,
         settings=settings,
         settings_path=settings_path,
+        session_store=session_store,
     )
     return app.run(sys.argv if argv is None else argv)
 
