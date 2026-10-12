@@ -107,10 +107,13 @@ def compute_ui(w, h):
         "btn_font": min(max(28.0, top_h * 0.34), w * 0.06),
         "filter_font": max(28.0, top_h * 0.34),
         "nav_h": nav_h,
-        "nav_font": min(max(30.0, nav_h * 0.36), w * 0.06),
+        "nav_font": min(max(34.0, nav_h * 0.44), w * 0.06),
         "status_font": status_font,
-        "status_h": max(56.0, status_font + 18),
+        "status_h": max(56.0, status_font + 10),
         "banner_font": max(30.0, h * 0.012),
+        "stat_hero": min(max(64.0, h * 0.028), ((w - 52) / 3 - 24) / 4.5),
+        "stat_cap": max(28.0, h * 0.011),
+        "stat_row": max(120.0, h * 0.045),
         "add_h": add_h,
         "add_font": max(24.0, add_h * 0.30),
         "add_btn_w": max(110.0, w * 0.11),
@@ -928,7 +931,9 @@ class StatsScreen(Screen):
         top = BoxLayout(orientation="horizontal", size_hint_y=None,
                         height=_U.get("top_h", 72), spacing=10)
         back = _flat_button("< Today", _U.get("btn_font", 28),
-                            size_hint_x=None, width=_U.get("title_w", 120))
+                            size_hint_x=None,
+                            width=max(_U.get("title_w", 120),
+                                      _U.get("btn_font", 28) * 4.6))
         back.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
         top.add_widget(back)
         top.add_widget(Label(text="Stats", bold=True, font_size=_U.get("title_font", 30), color=_FG, halign="left"))
@@ -941,15 +946,9 @@ class StatsScreen(Screen):
         scroll = ScrollView(bar_width=8, bar_color=(0, 0, 0, 0),
                             bar_inactive_color=(0, 0, 0, 0),
                             scroll_type=["content"])
-        self._stats_scroll = scroll
-        self._body = Label(text="", font_size=_U.get("stats_body", 34),
-                           color=_FG, line_height=1.6,
-                           halign="left", valign="top", size_hint_y=None)
-        self._body.bind(texture_size=lambda *_a: self._fit_body())
-        scroll.bind(height=lambda *_a: self._fit_body())
-        self._body.bind(texture_size=lambda _i, v: setattr(self._body, "height", v[1]),
-                        width=lambda _i, v: setattr(self._body, "text_size", (v, None)))
-        scroll.add_widget(self._body)
+        self._stats_list = GridLayout(cols=1, size_hint_y=None, spacing=10)
+        self._stats_list.bind(minimum_height=self._stats_list.setter("height"))
+        scroll.add_widget(self._stats_list)
         stats_wrap.add_widget(scroll)
         stats_wrap.add_widget(FastScrollRail(scroll))
         root.add_widget(stats_wrap)
@@ -958,47 +957,76 @@ class StatsScreen(Screen):
     def on_pre_enter(self):
         self.refresh()
 
-    def _fit_body(self) -> None:
-        """Stats fill the page: body is at least as tall as the viewport."""
-        try:
-            tex_h = float(self._body.texture_size[1] or 0)
-        except Exception:
-            tex_h = 0.0
-        try:
-            view_h = float(self._stats_scroll.height or 0)
-        except Exception:
-            view_h = 0.0
-        try:
-            self._body.height = max(tex_h, view_h)
-        except Exception:
-            pass
+    def _stat_card(self, value: str, caption: str, color) -> BoxLayout:
+        card = BoxLayout(orientation="vertical", padding=12, spacing=4)
+        _paint_bg(card, _CARD, radius=18)
+        num = Label(text=value, bold=True,
+                    font_size=_U.get("stat_hero", 87), color=color,
+                    halign="center", valign="middle", size_hint_y=0.68)
+        num.bind(size=num.setter("text_size"))
+        cap = Label(text=caption, font_size=_U.get("stat_cap", 34),
+                    color=_DIM, halign="center", valign="middle",
+                    size_hint_y=0.32)
+        cap.bind(size=cap.setter("text_size"))
+        card.add_widget(num)
+        card.add_widget(cap)
+        return card
+
+    def _stat_row(self, name: str, value: str) -> BoxLayout:
+        row = BoxLayout(orientation="horizontal", spacing=8, padding=(16, 8),
+                        size_hint_y=None, height=_U.get("stat_row", 140))
+        _paint_bg(row, _CARD, radius=18)
+        left = Label(text=_display(name, 40), bold=True,
+                     font_size=_U.get("stat_cap", 34), color=_FG,
+                     halign="left", valign="middle")
+        left.bind(size=left.setter("text_size"))
+        left.size_hint_x = 0.65
+        right = Label(text=value, bold=True,
+                      font_size=_U.get("stat_cap", 34), color=_ACCENT,
+                      halign="right", valign="middle")
+        right.bind(size=right.setter("text_size"))
+        right.size_hint_x = 0.35
+        row.add_widget(left)
+        row.add_widget(right)
+        return row
+
+    def _stat_section(self, title: str, mapping: dict, limit: int) -> None:
+        header = Label(text=title, bold=True,
+                       font_size=_U.get("title_font", 40), color=_FG,
+                       halign="left", valign="middle",
+                       size_hint_y=None, height=_U.get("top_h", 112))
+        header.bind(size=header.setter("text_size"))
+        self._stats_list.add_widget(header)
+        top = sorted(mapping.items(), key=lambda kv: -kv[1])[:limit]
+        if not top:
+            self._stats_list.add_widget(Label(text="Nothing yet.", color=_DIM,
+                                              font_size=_U.get("stat_cap", 34),
+                                              size_hint_y=None, height=60))
+            return
+        for name, sec in top:
+            self._stats_list.add_widget(
+                self._stat_row(str(name), format_duration(sec)))
 
     def refresh(self):
         try:
             data = App.get_running_app().session_store.stats()
         except Exception as exc:
-            self._body.text = f"Failed: {exc}"
+            self._stats_list.clear_widgets()
+            self._stats_list.add_widget(Label(text=f"Failed: {exc}", color=_RED))
             return
-        lines = [
-            f"Today: {format_duration(data['today_sec'])}",
-            f"Last 7 days: {format_duration(data['week_sec'])}",
-            f"Day streak: {data['streak']}",
-            "",
-            "By project:",
-        ]
-        if data["by_project"]:
-            for name, sec in sorted(data["by_project"].items(), key=lambda kv: -kv[1]):
-                lines.append(f"  {name}: {format_duration(sec)}")
-        else:
-            lines.append("  Nothing yet.")
-        lines.append("")
-        lines.append("By task:")
-        if data["by_task"]:
-            for name, sec in sorted(data["by_task"].items(), key=lambda kv: -kv[1])[:20]:
-                lines.append(f"  {name}: {format_duration(sec)}")
-        else:
-            lines.append("  Nothing yet.")
-        self._body.text = "\n".join(lines)
+        self._stats_list.clear_widgets()
+        hero = BoxLayout(orientation="horizontal", spacing=10,
+                         size_hint_y=None,
+                         height=_U.get("stat_hero", 87) + 110)
+        hero.add_widget(self._stat_card(format_duration(data["today_sec"]),
+                                        "Today", _ACCENT))
+        hero.add_widget(self._stat_card(format_duration(data["week_sec"]),
+                                        "7 days", _GREEN))
+        hero.add_widget(self._stat_card(str(data["streak"]),
+                                        "Streak", _FG))
+        self._stats_list.add_widget(hero)
+        self._stat_section("By project", data["by_project"] or {}, 5)
+        self._stat_section("By task", data["by_task"] or {}, 20)
 
 
 class SettingsScreen(Screen):
@@ -1013,22 +1041,26 @@ class SettingsScreen(Screen):
         root.add_widget(Label(text="Settings", bold=True,
                               font_size=_U.get("title_font", 30), color=_FG,
                               size_hint_y=None, height=_U.get("top_h", 72)))
-        root.add_widget(Label(text="Focus minutes:", color=_FG,
+        root.add_widget(Label(text="Focus length:", color=_FG,
                               font_size=_U.get("setup_entry_font", 34),
                               size_hint_y=None, height=_U.get("setup_entry_font", 34) * 2))
-        self._focus = _dark_entry("", _U.get("setup_entry_font", 34),
-                                  size_hint_y=None,
-                                  height=_U.get("setup_entry_h", 64))
-        self._focus.input_filter = "int"
-        root.add_widget(self._focus)
-        root.add_widget(Label(text="Break minutes:", color=_FG,
+        self._focus_val = 25
+        self._focus_btn = _flat_button("", _U.get("setup_entry_font", 34),
+                                       size_hint_y=None,
+                                       height=_U.get("setup_entry_h", 64))
+        self._focus_btn.bind(on_release=lambda _b: self._open_number_popup(
+            "Focus length", self._focus_val, 1, 180, 5, self._set_focus))
+        root.add_widget(self._focus_btn)
+        root.add_widget(Label(text="Break length:", color=_FG,
                               font_size=_U.get("setup_entry_font", 34),
                               size_hint_y=None, height=_U.get("setup_entry_font", 34) * 2))
-        self._break = _dark_entry("", _U.get("setup_entry_font", 34),
-                                  size_hint_y=None,
-                                  height=_U.get("setup_entry_h", 64))
-        self._break.input_filter = "int"
-        root.add_widget(self._break)
+        self._break_val = 5
+        self._break_btn = _flat_button("", _U.get("setup_entry_font", 34),
+                                       size_hint_y=None,
+                                       height=_U.get("setup_entry_h", 64))
+        self._break_btn.bind(on_release=lambda _b: self._open_number_popup(
+            "Break length", self._break_val, 1, 60, 5, self._set_break))
+        root.add_widget(self._break_btn)
         root.add_widget(Label(text="Todoist API token:", color=_FG,
                               font_size=_U.get("setup_entry_font", 34),
                               size_hint_y=None, height=_U.get("setup_entry_font", 34) * 2))
@@ -1037,7 +1069,8 @@ class SettingsScreen(Screen):
                                   height=_U.get("setup_entry_h", 64))
         self._token.password = True
         root.add_widget(self._token)
-        self._status = Label(text="", color=_DIM)
+        self._status = Label(text="", color=_DIM,
+                             font_size=_U.get("setup_entry_font", 34))
         root.add_widget(self._status)
         root.add_widget(Widget(size_hint_y=1))
         save = _flat_button("Save", _U.get("setup_btn_font", 34),
@@ -1049,18 +1082,63 @@ class SettingsScreen(Screen):
 
     def on_pre_enter(self):
         app = App.get_running_app()
-        self._focus.text = str(app.settings.focus_min)
-        self._break.text = str(app.settings.short_break_min)
+        self._focus_val = app.settings.focus_min
+        self._break_val = app.settings.short_break_min
+        self._focus_btn.text = f"{self._focus_val} min"
+        self._break_btn.text = f"{self._break_val} min"
         self._token.text = app.token or ""
+
+    def _set_focus(self, value: int) -> None:
+        self._focus_val = value
+        self._focus_btn.text = f"{value} min"
+
+    def _set_break(self, value: int) -> None:
+        self._break_val = value
+        self._break_btn.text = f"{value} min"
+
+    def _open_number_popup(self, title: str, current: int, minimum: int,
+                           maximum: int, step: int, on_pick) -> None:
+        """Stepper popup: big value with - / + controls, then Done."""
+        layout = BoxLayout(orientation="vertical", spacing=12, padding=20)
+        _paint_bg(layout, _BG)
+        state = {"v": min(maximum, max(minimum, int(current)))}
+        big = Label(text=str(state["v"]), bold=True,
+                    font_size=_U.get("stat_hero", 87), color=_FG,
+                    halign="center", valign="middle")
+        big.bind(size=big.setter("text_size"))
+        layout.add_widget(big)
+        unit = Label(text="minutes", font_size=_U.get("stat_cap", 34),
+                     color=_DIM, halign="center", size_hint_y=None, height=48)
+        layout.add_widget(unit)
+
+        def _adj(delta: int) -> None:
+            state["v"] = min(maximum, max(minimum, state["v"] + delta))
+            big.text = str(state["v"])
+
+        row = BoxLayout(orientation="horizontal", spacing=12,
+                        size_hint_y=None, height=_U.get("setup_btn_h", 156))
+        minus = _flat_button("-", _U.get("setup_btn_font", 41))
+        minus.bind(on_release=lambda _b: _adj(-step))
+        row.add_widget(minus)
+        plus = _flat_button("+", _U.get("setup_btn_font", 41))
+        plus.bind(on_release=lambda _b: _adj(step))
+        row.add_widget(plus)
+        layout.add_widget(row)
+        popup = Popup(title=title, title_size=28, title_color=_FG,
+                      separator_color=_ACCENT, content=layout,
+                      size_hint=(0.85, None),
+                      height=max(560.0, _U.get("stat_hero", 87) + 380))
+        done = _flat_button("Done", _U.get("setup_btn_font", 41),
+                            bg=_ACCENT, fg=_DARK_TEXT,
+                            size_hint_y=None, height=_U.get("setup_btn_h", 156))
+        done.bind(on_release=lambda _b: (popup.dismiss(), on_pick(state["v"])))
+        layout.add_widget(done)
+        popup.open()
 
     def _save(self):
         app = App.get_running_app()
-        try:
-            focus = max(1, min(180, int(self._focus.text or app.settings.focus_min)))
-            brk = max(1, min(60, int(self._break.text or app.settings.short_break_min)))
-        except ValueError:
-            self._status.text = "Durations must be numbers."
-            return
+        focus = min(180, max(1, int(self._focus_val)))
+        brk = min(60, max(1, int(self._break_val)))
         app.settings = TimerSettings(focus_min=focus, short_break_min=brk)
         save_timer_settings(app.settings_path, app.settings)
         token = self._token.text.strip()
