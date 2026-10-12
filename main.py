@@ -157,7 +157,7 @@ class PomodoroApp(Adw.Application):
         self._banner.set_reveal_child(False)
         self._banner.set_halign(Gtk.Align.CENTER)
         self._banner.set_valign(Gtk.Align.END)
-        self._banner.set_margin_bottom(16)
+        self._banner.set_margin_bottom(64)
         banner_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         banner_box.add_css_class("card")
         banner_box.set_margin_top(10)
