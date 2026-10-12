@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,6 +19,71 @@ if TYPE_CHECKING:
     from todoist import TodoistClient
 
 
+class FilterStore:
+    """LOCAL named Todoist filter queries (no server list endpoint)."""
+
+    def __init__(self, state_path: str | Path):
+        self.state_path = Path(state_path)
+
+    def _load(self) -> list[dict[str, str]]:
+        try:
+            if not self.state_path.exists():
+                return []
+            data = json.loads(self.state_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return []
+        items: list[dict[str, str]] = []
+        try:
+            if isinstance(data, dict):
+                raw = data.get("filters", [])
+            elif isinstance(data, list):
+                raw = data
+            else:
+                return []
+            if not isinstance(raw, list):
+                return []
+            for entry in raw:
+                if (
+                    isinstance(entry, dict)
+                    and isinstance(entry.get("name"), str)
+                    and isinstance(entry.get("query"), str)
+                ):
+                    items.append({"name": entry["name"], "query": entry["query"]})
+        except Exception:
+            return []
+        return items
+
+    def _save(self, items: list[dict[str, str]]) -> None:
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.state_path.with_name(self.state_path.name + ".tmp")
+        tmp.write_text(json.dumps({"filters": items}), encoding="utf-8")
+        os.replace(tmp, self.state_path)
+
+    def list(self) -> list[dict[str, str]]:
+        return self._load()
+
+    def add(self, name: str, query: str) -> None:
+        name = (name or "").strip()
+        query = (query or "").strip()
+        if not name:
+            raise ValueError("filter name must not be blank")
+        if not query:
+            raise ValueError("filter query must not be blank")
+        items = [i for i in self._load() if i["name"] != name]
+        items.append({"name": name, "query": query})
+        self._save(items)
+
+    def remove(self, name: str) -> None:
+        items = [i for i in self._load() if i.get("name") != name]
+        self._save(items)
+
+    def get(self, name: str) -> str | None:
+        for entry in self._load():
+            if entry["name"] == name:
+                return entry["query"]
+        return None
+
+
 class SyncStore:
     """Local state + failure contract over a TodoistClient."""
 
@@ -28,10 +94,48 @@ class SyncStore:
         # and reused on retry for duplicate protection.
         self.pending_adds: list[tuple[str, str]] = []
         self._closing: set[str] = set()
+        self._all_tasks: list[Task] = []
+        self.active_filter: str | None = None
 
     # -- read ---------------------------------------------------------
     def refresh_today(self) -> list[Task]:
         return self.client.list_today()
+
+    def refresh_all(self) -> list[Task]:
+        tasks = self.client.list_all()
+        self._all_tasks = list(tasks)
+        return self._all_tasks
+
+    def set_filter(self, query: str | None) -> None:
+        if query is None:
+            self.active_filter = None
+        else:
+            stripped = query.strip()
+            self.active_filter = stripped if stripped else None
+        self._all_tasks = []
+
+    def candidates(self) -> list[Task]:
+        if self.active_filter:
+            return self.client.tasks_by_filter(self.active_filter)
+        return self.refresh_all()
+
+    def search(self, query: str) -> list[Task]:
+        if not query or not query.strip():
+            return []
+        if self.active_filter:
+            pool = self.candidates()
+        else:
+            if not self._all_tasks:
+                # Propagate any client exceptions to the caller.
+                self.refresh_all()
+            pool = self._all_tasks
+        needle = query.strip().lower()
+        matched = [t for t in pool if needle in t.content.lower()]
+        dated = [t for t in matched if t.due_date is not None]
+        dateless = [t for t in matched if t.due_date is None]
+        dated.sort(key=lambda t: (t.due_date, -t.priority))  # type: ignore[union-attr]
+        dateless.sort(key=lambda t: -t.priority)
+        return dated + dateless
 
     # -- add ----------------------------------------------------------
     def add(self, content: str) -> Task:

@@ -23,9 +23,10 @@ except (ImportError, ValueError) as _gi_exc:
     sys.exit(2)
 
 from config import ConfigError, load_config
-from sync import SyncStore
+from sync import FilterStore, SyncStore
 from todoist import TodoistClient
 from ui_celebrate import CelebrationWindow
+from ui_palette import PaletteWindow
 from ui_timer import TimerView
 from ui_today import TodayPanel
 
@@ -33,9 +34,16 @@ from ui_today import TodayPanel
 class PomodoroApp(Adw.Application):
     """Adw.Application with stacked Today / Timer views."""
 
-    def __init__(self, store: SyncStore, focus_min: int, short_break_min: int) -> None:
+    def __init__(
+        self,
+        store: SyncStore,
+        focus_min: int,
+        short_break_min: int,
+        filter_store: FilterStore | None = None,
+    ) -> None:
         super().__init__(application_id="dev.todoist.pomodoro")
         self._store = store
+        self._filter_store = filter_store
         self._focus_min = focus_min
         self._short_break_min = short_break_min
         self._stack: Gtk.Stack | None = None
@@ -73,6 +81,15 @@ class PomodoroApp(Adw.Application):
         self._stack.add_titled(timer_page, "timer", "Timer")
 
         win.set_content(self._stack)
+
+        palette_shortcut = Gtk.Shortcut.new(
+            trigger=Gtk.ShortcutTrigger.parse_string("<Control>p"),
+            action=Gtk.CallbackAction.new(self._on_palette_shortcut),
+        )
+        shortcut_controller = Gtk.ShortcutController()
+        shortcut_controller.add_shortcut(palette_shortcut)
+        win.add_controller(shortcut_controller)
+
         win.present()
 
     # -- wiring --------------------------------------------------------
@@ -86,6 +103,23 @@ class PomodoroApp(Adw.Application):
         if self._timer_view is not None:
             self._timer_view.bind_task(task)
         self._show("timer")
+
+    def _open_task(self, task) -> None:
+        # Palette pick: same as selecting a task from the Today list.
+        self._on_task_selected(task)
+
+    def _on_palette_shortcut(self, _widget, _args) -> bool:
+        palette = PaletteWindow(
+            self._store,
+            on_pick=self._open_task,
+            filter_store=self._filter_store,
+        )
+        parent = self.get_active_window()
+        if parent is not None:
+            palette.set_transient_for(parent)
+        palette.set_modal(True)
+        palette.present()
+        return True
 
     def _on_timer_done(self, _mode: str) -> None:
         # Timer end: nothing else to do — TimerView already stopped,
@@ -117,10 +151,12 @@ def main(argv: list[str] | None = None) -> int:
     ) / "todoist-pomodoro"
     store = SyncStore(client, state_path=state_dir / "pending.json")
     store.load_state()
+    filter_store = FilterStore(state_dir / "filters.json")
     app = PomodoroApp(
         store,
         focus_min=config.focus_min,
         short_break_min=config.short_break_min,
+        filter_store=filter_store,
     )
     return app.run(sys.argv if argv is None else argv)
 

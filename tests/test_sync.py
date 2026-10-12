@@ -311,3 +311,200 @@ def test_pagination_cap_breaks_cursor_echo():
     client = TodoistClient("tok", session=stub)
     assert client.list_today() == []
     assert len(stub.get_calls) == 50  # capped, never infinite
+
+
+def test_list_all_returns_dated_and_dateless_sorted_across_two_pages():
+    today = date.today()
+    early = (today - timedelta(days=1)).isoformat()
+    late = (today + timedelta(days=5)).isoformat()
+    stub = StubSession()
+    pages = {
+        None: Resp(
+            200,
+            {
+                "results": [
+                    make_task_payload("d1", "late task", late, priority=1),
+                    make_task_payload("n1", "no due low", None, priority=1),
+                ],
+                "next_cursor": "cur1",
+            },
+        ),
+        "cur1": Resp(
+            200,
+            {
+                "results": [
+                    make_task_payload("n2", "no due high", None, priority=4),
+                    make_task_payload("d2", "early task", early, priority=1),
+                ]
+            },
+        ),
+    }
+
+    def handler(url, headers, params, timeout):
+        return pages.get(params.get("cursor"), Resp(200, {"results": []}))
+
+    stub.get_handler = handler
+    client = TodoistClient("tok", session=stub)
+    tasks = client.list_all()
+    assert [t.id for t in tasks] == ["d2", "d1", "n2", "n1"]
+    assert len(stub.get_calls) == 2
+
+
+def test_search_matches_case_insensitively_and_ranks_dated_first():
+    today = date.today()
+    early = (today - timedelta(days=1)).isoformat()
+    stub = StubSession()
+    client = TodoistClient("tok", session=stub)
+    store = SyncStore(client)
+    store._all_tasks = [
+        Task(id="n1", content="Buy MILK tomorrow", priority=4),
+        Task(id="d1", content="buy milk today", due_date=today, priority=1),
+        Task(id="d2", content="BUY MILK overdue", due_date=today - timedelta(days=1), priority=1),
+        Task(id="x1", content="unrelated", due_date=early, priority=4),
+    ]
+    results = store.search("buy milk")
+    assert [t.id for t in results] == ["d2", "d1", "n1"]
+
+
+def test_search_on_empty_cache_triggers_fetch():
+    today_s = date.today().isoformat()
+    stub = StubSession()
+    stub.get_handler = lambda *a: Resp(
+        200, {"results": [make_task_payload("a1", "Read book", today_s)]}
+    )
+    client = TodoistClient("tok", session=stub)
+    store = SyncStore(client)
+    assert store._all_tasks == []
+    results = store.search("read")
+    assert [t.id for t in results] == ["a1"]
+    assert len(stub.get_calls) == 1
+    assert [t.id for t in store._all_tasks] == ["a1"]
+
+
+def test_search_blank_query_returns_empty():
+    stub = StubSession()
+    client = TodoistClient("tok", session=stub)
+    store = SyncStore(client)
+    assert store.search("") == []
+    assert store.search("   ") == []
+    assert len(stub.get_calls) == 0  # no fetch on blank query
+
+
+# --- appended: Todoist filter-query support ---
+
+def test_tasks_by_filter_paginates_two_pages_and_sends_query():
+    today_s = date.today().isoformat()
+    stub = StubSession()
+    pages = {
+        None: Resp(
+            200,
+            {
+                "results": [make_task_payload("f1", "F one", today_s)],
+                "next_cursor": "cur1",
+            },
+        ),
+        "cur1": Resp(
+            200, {"results": [make_task_payload("f2", "F two", today_s)]}
+        ),
+    }
+
+    def handler(url, headers, params, timeout):
+        assert url.endswith("/tasks/filter")
+        assert params["query"] == "today"
+        assert params["limit"] == 200
+        return pages.get(params.get("cursor"), Resp(200, {"results": []}))
+
+    stub.get_handler = handler
+    client = TodoistClient("tok", session=stub)
+    tasks = client.tasks_by_filter("today")
+    assert [t.id for t in tasks] == ["f1", "f2"]  # API order preserved
+    assert len(stub.get_calls) == 2
+
+
+def test_tasks_by_filter_blank_query_raises():
+    client = TodoistClient("tok", session=StubSession())
+    with pytest.raises(ValueError):
+        client.tasks_by_filter("")
+    with pytest.raises(ValueError):
+        client.tasks_by_filter("   ")
+
+
+def test_filter_store_roundtrip_and_overwrite(tmp_path):
+    from sync import FilterStore
+
+    path = tmp_path / "sub" / "filters.json"
+    store = FilterStore(path)
+    assert store.list() == []  # missing file -> []
+    store.add("today", "today")
+    store.add("work", "project:work")
+    assert store.get("today") == "today"
+    assert {e["name"] for e in store.list()} == {"today", "work"}
+    store.add("today", "overdue")  # same-name overwrites
+    assert store.get("today") == "overdue"
+    assert len(store.list()) == 2
+    store.remove("work")
+    assert store.get("work") is None
+    assert store.list() == [{"name": "today", "query": "overdue"}]
+    store.remove("absent")  # no-op, still persists
+    assert store.list() == [{"name": "today", "query": "overdue"}]
+    # reload from disk
+    assert FilterStore(path).list() == [{"name": "today", "query": "overdue"}]
+
+
+def test_filter_store_corrupt_file_returns_empty(tmp_path):
+    from sync import FilterStore
+
+    path = tmp_path / "filters.json"
+    path.write_text("not-json{{{", encoding="utf-8")
+    store = FilterStore(path)
+    assert store.list() == []
+    assert store.get("anything") is None
+
+
+def test_filter_store_blank_name_or_query_raises(tmp_path):
+    from sync import FilterStore
+
+    store = FilterStore(tmp_path / "filters.json")
+    with pytest.raises(ValueError):
+        store.add("", "today")
+    with pytest.raises(ValueError):
+        store.add("name", "   ")
+
+
+def test_set_filter_clears_cache():
+    stub = StubSession()
+    store = SyncStore(TodoistClient("tok", session=stub))
+    store._all_tasks = [Task(id="x", content="X")]
+    store.set_filter("today")
+    assert store.active_filter == "today"
+    assert store._all_tasks == []
+    store.set_filter("   ")
+    assert store.active_filter is None
+    store.set_filter(None)
+    assert store.active_filter is None
+
+
+def test_search_honors_active_filter():
+    from todoist import Task as TTask
+
+    calls: list[str] = []
+
+    class StubClient:
+        def list_all(self):
+            calls.append("list_all")
+            return [TTask(id="a", content="buy milk")]
+
+        def tasks_by_filter(self, query):
+            calls.append(f"tasks_by_filter:{query}")
+            assert query == "today"
+            return [
+                TTask(id="f1", content="buy milk filtered"),
+                TTask(id="f2", content="unrelated"),
+            ]
+
+    store = SyncStore(StubClient())  # type: ignore[arg-type]
+    store.set_filter("today")
+    results = store.search("milk")
+    assert [t.id for t in results] == ["f1"]
+    assert any(c.startswith("tasks_by_filter") for c in calls)
+    assert "list_all" not in calls

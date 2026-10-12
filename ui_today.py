@@ -85,6 +85,12 @@ class TodayPanel(Gtk.Box):
         self._banner.set_visible(False)
         self.append(self._banner)
 
+        # Client-side filter: substring match on loaded rows only, no network.
+        self._search = Gtk.SearchEntry()
+        self._search.set_placeholder_text("Filter tasks…")
+        self._search.connect("search-changed", self._on_filter_changed)
+        self.append(self._search)
+
         toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         title = Gtk.Label(label="Today")
         title.add_css_class("title-1")
@@ -221,6 +227,31 @@ class TodayPanel(Gtk.Box):
     def _on_refresh_clicked(self, _button: Gtk.Button) -> None:
         self.refresh()
 
+    def _on_filter_changed(self, _entry: Gtk.SearchEntry) -> None:
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        """Show only rows whose task.content contains the filter text.
+
+        Client-side only: operates on already-loaded rows, no network.
+        Clearing the search restores all rows. Rows without a task
+        (e.g. pending rows) always stay visible.
+        """
+        query = self._search.get_text().strip().lower()
+        child = self._list.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            task = getattr(child, "_task", None)
+            if task is None or not query:
+                child.set_visible(True)
+            else:
+                try:
+                    content = str(task.content).lower()
+                except Exception:
+                    content = ""
+                child.set_visible(query in content)
+            child = nxt
+
     def _on_add_clicked(self, _button: Gtk.Button) -> None:
         self._submit_add()
 
@@ -260,6 +291,7 @@ class TodayPanel(Gtk.Box):
         self._rows.clear()
         for task in tasks:
             self._append_task_row(task)
+        self._apply_filter()
 
     def _append_task_row(self, task: Task) -> None:
         row = Gtk.ListBoxRow()
@@ -299,6 +331,8 @@ class TodayPanel(Gtk.Box):
         task_id = getattr(task, "id", None)
         if task_id is not None:
             self._rows[str(task_id)] = row
+        # Keep single-row adds consistent with any active filter text.
+        self._apply_filter()
 
     def _append_pending_row(self, content: str, message: str) -> None:
         row = Gtk.ListBoxRow()

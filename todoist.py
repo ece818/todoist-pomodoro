@@ -157,13 +157,8 @@ class TodoistClient:
             raise TodoistNetworkError(f"Network error POST {path}: {exc}") from exc
         return resp
 
-    def list_today(self) -> list[Task]:
-        """GET /tasks paging through ALL pages; filter due_date <= today.
-
-        Excludes date-less tasks. Sorts overdue-first then priority
-        descending (4 first).
-        """
-        today = date.today()
+    def _fetch_all_tasks(self) -> list[dict[str, Any]]:
+        """GET /tasks paging through ALL pages; return raw payload dicts."""
         collected: list[dict[str, Any]] = []
         cursor: str | None = None
         # Hard cap: a misbehaving pager echoing cursors must not loop forever.
@@ -190,13 +185,63 @@ class TodoistClient:
             if not next_cursor:
                 break
             cursor = str(next_cursor)
+        return collected
 
+    def list_today(self) -> list[Task]:
+        """GET /tasks paging through ALL pages; filter due_date <= today.
+
+        Excludes date-less tasks. Sorts overdue-first then priority
+        descending (4 first).
+        """
+        today = date.today()
+        collected = self._fetch_all_tasks()
         tasks = [_parse_task(item) for item in collected]
         # Exclude date-less; keep due_date <= today.
         filtered = [t for t in tasks if t.due_date is not None and t.due_date <= today]
         # Overdue-first (earliest due date first), then priority desc (4 first).
         filtered.sort(key=lambda t: (t.due_date, -t.priority))  # type: ignore[union-attr]
         return filtered
+
+    def list_all(self) -> list[Task]:
+        """Fetch ALL tasks (no date filter); dated first, dateless last."""
+        collected = self._fetch_all_tasks()
+        tasks = [_parse_task(item) for item in collected]
+        dated = [t for t in tasks if t.due_date is not None]
+        dateless = [t for t in tasks if t.due_date is None]
+        dated.sort(key=lambda t: (t.due_date, -t.priority))  # type: ignore[union-attr]
+        dateless.sort(key=lambda t: -t.priority)
+        return dated + dateless
+
+    def tasks_by_filter(self, query: str) -> list[Task]:
+        """GET /tasks/filter for a Todoist filter query; API order, no sorting."""
+        if not query or not query.strip():
+            raise ValueError("filter query must not be blank")
+        collected: list[dict[str, Any]] = []
+        cursor: str | None = None
+        for _page in range(50):
+            params: dict[str, Any] = {"query": query, "limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            resp = self._get("/tasks/filter", params=params)
+            self._raise_for_status(resp, "filter tasks")
+            try:
+                payload = resp.json()
+            except (ValueError, AttributeError) as exc:
+                raise TodoistError(f"Invalid JSON in filter tasks: {exc}") from exc
+            if isinstance(payload, dict):
+                items = payload.get("results", payload.get("tasks", payload.get("data", [])))
+                next_cursor = payload.get("next_cursor")
+            elif isinstance(payload, list):
+                items = payload
+                next_cursor = None
+            else:
+                raise TodoistError("Unexpected filter tasks payload")
+            if isinstance(items, list):
+                collected.extend(i for i in items if isinstance(i, dict))
+            if not next_cursor:
+                break
+            cursor = str(next_cursor)
+        return [_parse_task(item) for item in collected]
 
     def add_task(self, content: str, request_id: str | None = None) -> Task:
         """POST /tasks with X-Request-Id idempotency header."""
