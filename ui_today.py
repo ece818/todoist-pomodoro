@@ -101,9 +101,10 @@ class TodayPanel(Gtk.Box):
         self.set_margin_start(12)
         self.set_margin_end(12)
 
-        # Auth banner (hidden until a 401 proves the token is invalid).
+        # Auth banner (hidden until a 401 proves the token is invalid,
+        # or until startup finds no token at all).
         self._banner = Gtk.Label(
-            label="Token invalid — update .env with a valid Todoist token and restart."
+            label="Token invalid — open Settings to add a valid Todoist token."
         )
         self._banner.add_css_class("error")
         self._banner.set_wrap(True)
@@ -284,6 +285,25 @@ class TodayPanel(Gtk.Box):
         if 0 <= index < len(self._project_ids):
             return self._project_ids[index]
         return ""
+    def show_token_needed(self) -> None:
+        """First-run state: no token anywhere — point at Settings."""
+        self._auth_failed = True
+        try:
+            self._refresh_button.set_sensitive(True)
+            self._banner.set_visible(True)
+        except Exception:
+            pass
+        self._set_status("No Todoist token yet — open Settings to connect.")
+
+    def note_token_updated(self) -> None:
+        """A new token was saved + verified — clear the block, reload."""
+        self._auth_failed = False
+        try:
+            self._banner.set_visible(False)
+        except Exception:
+            pass
+        self.refresh()
+
     def _on_load_failed(self, message: str) -> bool:
         self._refresh_button.set_sensitive(True)
         self._set_status(f"Could not load tasks: {message}")

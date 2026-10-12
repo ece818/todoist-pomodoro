@@ -29,6 +29,7 @@ from config import (
     load_config,
     load_timer_settings,
     save_timer_settings,
+    save_user_token,
 )
 from sessions import SessionStore
 from sync import FilterStore, SyncStore
@@ -59,9 +60,11 @@ class PomodoroApp(Adw.Application):
         settings: TimerSettings | None = None,
         settings_path=None,
         session_store: SessionStore | None = None,
+        has_token: bool = True,
     ) -> None:
         super().__init__(application_id="dev.todoist.pomodoro")
         self._store = store
+        self._has_token = has_token
         self._filter_store = filter_store
         self._session_store = session_store
         self._settings = settings or TimerSettings(
@@ -220,6 +223,21 @@ class PomodoroApp(Adw.Application):
         win.add_controller(hotkey_controller)
 
         win.present()
+        if not self._has_token:
+            # First run with no token anywhere: point at Settings now.
+            GLib.idle_add(self._prompt_for_token)
+
+    def _prompt_for_token(self) -> bool:
+        try:
+            if self._today_panel is not None:
+                self._today_panel.show_token_needed()
+        except Exception:
+            pass
+        try:
+            self._on_settings_clicked(None)
+        except Exception:
+            pass
+        return False
 
     # -- wiring --------------------------------------------------------
 
@@ -330,16 +348,22 @@ class PomodoroApp(Adw.Application):
         except Exception:
             return False
 
-    def _on_settings_clicked(self, _button: Gtk.Button) -> None:
+    def _on_settings_clicked(self, _button: Gtk.Button | None) -> None:
+        try:
+            current = str(getattr(getattr(self._store, "client", None), "token", "") or "")
+        except Exception:
+            current = ""
+        status = f"Set (…{current[-4:]})" if current else "Not set"
         dialog = SettingsDialog(
             focus_min=self._settings.focus_min,
             short_break_min=self._settings.short_break_min,
             on_save=self._on_settings_saved,
+            token_status=status,
         )
         dialog.set_transient_for(self.get_active_window())
         dialog.present()
 
-    def _on_settings_saved(self, focus_min: int, short_break_min: int) -> None:
+    def _on_settings_saved(self, focus_min: int, short_break_min: int, token: str = "") -> None:
         self._settings = TimerSettings(
             focus_min=max(1, focus_min), short_break_min=max(1, short_break_min)
         )
@@ -354,6 +378,49 @@ class PomodoroApp(Adw.Application):
             self._timer_view.set_durations(
                 self._settings.focus_min, self._settings.short_break_min
             )
+        new_token = (token or "").strip()
+        if new_token:
+            threading.Thread(
+                target=self._token_worker, args=(new_token,), daemon=True
+            ).start()
+
+    def _token_worker(self, new_token: str) -> None:
+        """Validate a Settings-pasted token, then swap it in live."""
+        try:
+            TodoistClient(new_token, timeout=15).list_projects()
+        except TodoistAuthError:
+            GLib.idle_add(
+                self._show_banner, "Token invalid — check and try again.", None, False
+            )
+        except Exception as exc:
+            GLib.idle_add(
+                self._show_banner, f"Could not verify token: {exc}", None, False
+            )
+        else:
+            try:
+                save_user_token(new_token)
+            except (ConfigError, OSError) as exc:
+                GLib.idle_add(
+                    self._show_banner, f"Could not save token: {exc}", None, False
+                )
+                return
+            GLib.idle_add(self._on_token_connected, new_token)
+
+    def _on_token_connected(self, new_token: str) -> bool:
+        """New token verified + saved: swap the client, reload everything."""
+        try:
+            self._store.client = TodoistClient(new_token, timeout=10)
+        except Exception as exc:
+            self._show_banner(f"Could not apply token: {exc}", None, False)
+            return False
+        self._has_token = True
+        try:
+            if self._today_panel is not None:
+                self._today_panel.note_token_updated()
+        except Exception:
+            pass
+        self._show_banner("Connected to Todoist.", None, False)
+        return False
 
     def _on_palette_shortcut(self, _widget, _args) -> bool:
         palette = PaletteWindow(
@@ -489,7 +556,8 @@ def main(argv: list[str] | None = None) -> int:
     # Resolve .env next to the app itself so `timer` works from any cwd.
     app_dir = Path(__file__).resolve().parent
     try:
-        config = load_config(env_path=app_dir / ".env")
+        # Missing token is not fatal: the app opens into Settings setup.
+        config = load_config(env_path=app_dir / ".env", allow_missing_token=True)
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
@@ -516,6 +584,7 @@ def main(argv: list[str] | None = None) -> int:
         settings=settings,
         settings_path=settings_path,
         session_store=session_store,
+        has_token=bool(config.token),
     )
     return app.run(sys.argv if argv is None else argv)
 
