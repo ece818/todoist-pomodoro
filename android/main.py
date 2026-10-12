@@ -67,7 +67,11 @@ def _display(text, limit=None):
 def compute_ui(w, h):
     """Screen-fraction sizes: ~7 rows visible on any density.
 
-    Pure function (tested). Floors keep desktop windows sane.
+    Pure function (tested). Floors are phone-first: init_ui() runs once
+    at build time when Window.size may still be a small desktop fallback
+    (e.g. 800x600), so floors must already be usable on a phone. The
+    timer screen re-applies sizes on Window.size changes (see
+    TimerScreen._on_window_size), which corrects any early mis-measure.
     """
     w = max(320.0, float(w or 0))
     h = max(480.0, float(h or 0))
@@ -77,8 +81,11 @@ def compute_ui(w, h):
     nav_h = max(56.0, h * 0.032)
     add_h = max(60.0, h * 0.04)
     banner_h = max(56.0, h * 0.032)
-    timer_btn_h = max(64.0, h * 0.05)
-    clock_font = min(h * 0.10, w * 0.27)
+    # Timer: width-driven so a tall/narrow phone still gets a big clock
+    # even when height is reduced by system bars at measure time.
+    timer_btn_h = max(76.0, h * 0.062)
+    clock_font = min(max(h * 0.13, w * 0.24), w * 0.29)
+    clock_font = max(min(132.0, w * 0.29), clock_font)
     popup_btn_h = max(64.0, h * 0.045)
     return {
         "row_h": row_h,
@@ -102,13 +109,15 @@ def compute_ui(w, h):
         "add_font": max(16.0, add_h * 0.26),
         "add_btn_w": max(100.0, w * 0.10),
         "banner_h": banner_h,
-        "timer_back_h": max(52.0, h * 0.032),
-        "timer_back_font": max(18.0, h * 0.0095),
-        "timer_task_font": min(max(26.0, h * 0.02), 56.0),
-        "clock_font": max(84.0, clock_font),
-        "timer_state_font": max(15.0, h * 0.0075),
+        "timer_back_h": max(56.0, h * 0.04),
+        "timer_back_font": max(20.0, h * 0.012),
+        "timer_task_font": min(max(32.0, w * 0.075), 64.0),
+        "clock_font": clock_font,
+        "timer_state_font": max(19.0, h * 0.011),
+        "timer_mode_font": max(20.0, h * 0.011),
+        "timer_prog_font": max(17.0, h * 0.009),
         "timer_btn_h": timer_btn_h,
-        "timer_btn_font": max(18.0, timer_btn_h * 0.28),
+        "timer_btn_font": max(21.0, timer_btn_h * 0.30),
         "setup_title": min(max(30.0, h * 0.024), 64.0),
         "setup_entry_h": max(56.0, h * 0.04),
         "setup_entry_font": min(30.0, max(18.0, h * 0.011)),
@@ -404,36 +413,75 @@ class TodayScreen(Screen):
 
 
 class TimerScreen(Screen):
+    _FG = (0.90, 0.91, 0.97, 1)
+    _DIM = (0.65, 0.68, 0.78, 1)
+    _ACCENT = (0.54, 0.71, 0.98, 1)
+    _GREEN = (0.65, 0.89, 0.63, 1)
+
     def __init__(self, **kwargs):
         super().__init__(name="timer", **kwargs)
-        root = BoxLayout(orientation="vertical", padding=24, spacing=12)
-        back = Button(text="< Today", font_size=_U.get("timer_back_font", 20),
-                      size_hint_y=None, height=_U.get("timer_back_h", 64))
-        back.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
-        root.add_widget(back)
-        self._task_label = Label(text="No task", font_size=_U.get("timer_task_font", 34),
-                                     halign="center")
+        root = BoxLayout(orientation="vertical", padding=20, spacing=10)
+        top = BoxLayout(orientation="horizontal", size_hint_y=None,
+                        height=_U.get("timer_back_h", 64), spacing=10)
+        self._back_btn = Button(text="< Today",
+                                font_size=_U.get("timer_back_font", 20),
+                                size_hint_x=0.38, bold=True,
+                                background_normal="",
+                                background_color=(0.27, 0.28, 0.35, 1))
+        self._back_btn.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
+        top.add_widget(self._back_btn)
+        self._mode_label = Label(text="FOCUS", bold=True,
+                                 font_size=_U.get("timer_mode_font", 20),
+                                 color=self._ACCENT, halign="center",
+                                 valign="middle", size_hint_x=0.62)
+        self._mode_label.bind(size=self._mode_label.setter("text_size"))
+        top.add_widget(self._mode_label)
+        root.add_widget(top)
+        self._task_label = Label(text="No task", bold=True,
+                                 font_size=_U.get("timer_task_font", 34),
+                                 color=self._FG, halign="center",
+                                 valign="middle", size_hint_y=0.42)
+        self._task_label.bind(size=self._task_label.setter("text_size"))
         root.add_widget(self._task_label)
-        self._clock = Label(text="25:00", font_size=_U.get("clock_font", 170),
-                            halign="center")
+        self._clock = Label(text="25:00", bold=True,
+                            font_size=_U.get("clock_font", 170),
+                            color=self._FG, halign="center",
+                            valign="middle", size_hint_y=1.5,
+                            shorten=False)
+        self._clock.bind(size=self._clock.setter("text_size"))
         root.add_widget(self._clock)
-        self._state = Label(text="Ready", font_size=_U.get("timer_state_font", 16),
-                            color=(0.55, 0.55, 0.55, 1))
+        self._progress = Label(text="", font_size=_U.get("timer_prog_font", 17),
+                               color=self._DIM, halign="center",
+                               size_hint_y=None, height=30)
+        root.add_widget(self._progress)
+        self._state = Label(text="Ready", font_size=_U.get("timer_state_font", 19),
+                            color=self._DIM, halign="center",
+                            size_hint_y=None, height=34)
         root.add_widget(self._state)
         row1 = BoxLayout(orientation="horizontal", size_hint_y=None,
-                         height=_U.get("timer_btn_h", 88), spacing=8)
+                         height=_U.get("timer_btn_h", 88), spacing=10)
+        self._ctl_buttons: list = []
         for label, fn in (("Start", self._start), ("Pause", self._pause),
                           ("Reset", self._reset), ("Break", self._break)):
-            b = Button(text=label, font_size=_U.get("timer_btn_font", 24))
+            is_primary = (label == "Start")
+            b = Button(text=label, bold=True,
+                       font_size=_U.get("timer_btn_font", 24),
+                       background_normal="",
+                       background_color=(0.54, 0.71, 0.98, 1) if is_primary else (0.27, 0.28, 0.35, 1),
+                       color=(0.07, 0.07, 0.11, 1) if is_primary else (0.90, 0.91, 0.97, 1))
             b.bind(on_release=lambda _b, f=fn: f())
+            self._ctl_buttons.append(b)
             row1.add_widget(b)
         root.add_widget(row1)
-        done = Button(text="Mark task done", size_hint_y=None,
-                      height=_U.get("timer_btn_h", 88),
-                      font_size=_U.get("timer_btn_font", 24),
-                      background_normal="", background_color=(0.85, 0.26, 0.2, 1))
-        done.bind(on_release=lambda _b: self._mark_done())
-        root.add_widget(done)
+        self._done_btn = Button(text="Mark task done", bold=True,
+                                size_hint_y=None,
+                                height=_U.get("timer_btn_h", 88),
+                                font_size=_U.get("timer_btn_font", 24),
+                                background_normal="",
+                                background_color=(0.25, 0.55, 0.35, 1),
+                                color=(1, 1, 1, 1))
+        self._done_btn.bind(on_release=lambda _b: self._mark_done())
+        root.add_widget(self._done_btn)
         self.banner = StatusBanner()
         root.add_widget(self.banner)
         self.add_widget(root)
@@ -443,6 +491,44 @@ class TimerScreen(Screen):
         self._mode = "focus"
         self._run_start = None
         self._elapsed_base = 0
+        self._set_mode("focus")
+        try:
+            Window.bind(size=self._on_window_size)
+        except Exception:
+            pass
+
+    def _on_window_size(self, _win, _size) -> None:
+        try:
+            init_ui()
+        except Exception:
+            return
+        self._apply_sizes()
+
+    def _apply_sizes(self) -> None:
+        try:
+            self._back_btn.font_size = _U.get("timer_back_font", 20)
+            self._back_btn.height = _U.get("timer_back_h", 64)
+            self._mode_label.font_size = _U.get("timer_mode_font", 20)
+            self._task_label.font_size = _U.get("timer_task_font", 34)
+            self._clock.font_size = _U.get("clock_font", 170)
+            self._progress.font_size = _U.get("timer_prog_font", 17)
+            self._state.font_size = _U.get("timer_state_font", 19)
+            for b in self._ctl_buttons:
+                b.font_size = _U.get("timer_btn_font", 24)
+                b.height = _U.get("timer_btn_h", 88)
+            self._done_btn.font_size = _U.get("timer_btn_font", 24)
+            self._done_btn.height = _U.get("timer_btn_h", 88)
+        except Exception:
+            pass
+
+    def _set_mode(self, mode: str) -> None:
+        self._mode = mode
+        is_break = (mode == "break")
+        try:
+            self._mode_label.text = "BREAK" if is_break else "FOCUS"
+            self._mode_label.color = self._GREEN if is_break else self._ACCENT
+        except Exception:
+            pass
 
     def on_pre_enter(self):
         app = App.get_running_app()
@@ -450,12 +536,22 @@ class TimerScreen(Screen):
         if self._tick_ev is None:
             self._total = s.focus_min * 60
             self._remaining = self._total
+            self._elapsed_base = 0
+            self._set_mode("focus")
         task = app.timer_task
         self._task_label.text = _display(task.content, 60) if task is not None else "No task"
+        self._apply_sizes()
         self._render()
 
     def _render(self):
         self._clock.text = _fmt_clock(self._remaining)
+        try:
+            total = max(1, int(self._total))
+            done = max(0, total - max(0, int(self._remaining)))
+            pct = int(round(100.0 * done / total))
+            self._progress.text = f"{_fmt_clock(done)} of {_fmt_clock(total)} · {pct}%"
+        except Exception:
+            pass
 
     def _start(self):
         if self._tick_ev is not None:
@@ -504,7 +600,7 @@ class TimerScreen(Screen):
 
     def _break(self):
         self._reset(log_partial=True)
-        self._mode = "break"
+        self._set_mode("break")
         self._total = App.get_running_app().settings.short_break_min * 60
         self._remaining = self._total
         self._render()
@@ -516,7 +612,7 @@ class TimerScreen(Screen):
         if self._mode == "focus":
             App.get_running_app().log_session(self._total, finished=True)
         self._elapsed_base = 0
-        self._mode = "focus"
+        self._set_mode("focus")
         self._total = App.get_running_app().settings.focus_min * 60
         self._remaining = self._total
         self._render()
