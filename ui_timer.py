@@ -27,6 +27,35 @@ def _format_seconds(total: int) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
+_TIMER_CSS = b"""
+.timer-clock { font-size: 120px; font-weight: 800; }
+.timer-clock-full { font-size: 220px; font-weight: 800; }
+.timer-task { font-size: 28px; font-weight: 600; }
+.timer-task-full { font-size: 48px; font-weight: 600; }
+"""
+
+_css_loaded = False
+
+
+def _ensure_timer_css() -> None:
+    """Load the oversized-timer styles once; silently skip if unavailable."""
+    global _css_loaded
+    if _css_loaded:
+        return
+    try:
+        display = Gdk.Display.get_default()
+        if display is None:
+            return
+        provider = Gtk.CssProvider()
+        provider.load_from_data(_TIMER_CSS)
+        Gtk.StyleContext.add_provider_for_display(
+            display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+        _css_loaded = True
+    except Exception:
+        pass
+
+
 def play_end_sound() -> None:
     """Play the timer-end bell; every backend is guarded with fallbacks."""
     try:
@@ -73,23 +102,27 @@ class FullscreenTimerWindow(Gtk.Window):
         super().__init__()
         self.set_title("Focus")
         self.set_default_size(800, 600)
+        _ensure_timer_css()
         self._inhibit_cookie: Optional[int] = None
         self._inhibit_proxy = None
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         box.set_valign(Gtk.Align.CENTER)
+        box.set_halign(Gtk.Align.CENTER)
         box.set_margin_top(48)
         box.set_margin_bottom(48)
         box.set_margin_start(48)
         box.set_margin_end(48)
 
         self._task_label = Gtk.Label(label=task_name)
-        self._task_label.add_css_class("title-1")
+        self._task_label.add_css_class("timer-task-full")
         self._task_label.set_wrap(True)
+        self._task_label.set_xalign(0.5)
         box.append(self._task_label)
 
         self._clock_label = Gtk.Label(label=_format_seconds(remaining_seconds))
-        self._clock_label.add_css_class("title-1")
+        self._clock_label.add_css_class("timer-clock-full")
+        self._clock_label.set_xalign(0.5)
         box.append(self._clock_label)
 
         close_btn = Gtk.Button(label="Exit fullscreen (Esc)")
@@ -208,6 +241,7 @@ class TimerView(Gtk.Box):
         task=None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        _ensure_timer_css()
         self._focus_min = focus_min
         self._short_break_min = short_break_min
         self._on_done = on_done
@@ -225,20 +259,31 @@ class TimerView(Gtk.Box):
         self.set_margin_start(24)
         self.set_margin_end(24)
 
+        # Center stage: fills the page, clock dominates.
+        stage = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        stage.set_vexpand(True)
+        stage.set_valign(Gtk.Align.CENTER)
+        stage.set_halign(Gtk.Align.CENTER)
+        self.append(stage)
+
         self._task_label = Gtk.Label(label=self._task_name())
-        self._task_label.add_css_class("title-2")
+        self._task_label.add_css_class("timer-task")
         self._task_label.set_wrap(True)
-        self.append(self._task_label)
+        self._task_label.set_xalign(0.5)
+        stage.append(self._task_label)
 
         self._clock_label = Gtk.Label(label=_format_seconds(self._remaining))
-        self._clock_label.add_css_class("title-1")
-        self.append(self._clock_label)
+        self._clock_label.add_css_class("timer-clock")
+        self._clock_label.set_xalign(0.5)
+        stage.append(self._clock_label)
 
         self._state_label = Gtk.Label(label="Ready")
         self._state_label.add_css_class("dim-label")
-        self.append(self._state_label)
+        self._state_label.set_xalign(0.5)
+        stage.append(self._state_label)
 
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        controls.set_halign(Gtk.Align.CENTER)
         self._start_button = Gtk.Button(label="Start")
         self._start_button.connect("clicked", self._on_start_clicked)
         controls.append(self._start_button)
@@ -255,12 +300,14 @@ class TimerView(Gtk.Box):
         self.append(controls)
 
         extra = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        extra.set_halign(Gtk.Align.CENTER)
         self._fullscreen_button = Gtk.Button(label="Fullscreen")
         self._fullscreen_button.connect(
             "clicked", self._on_fullscreen_clicked
         )
         extra.append(self._fullscreen_button)
         self._mark_done_button = Gtk.Button(label="Mark task done")
+        self._mark_done_button.add_css_class("suggested-action")
         self._mark_done_button.connect(
             "clicked", self._on_mark_done_clicked
         )
@@ -269,6 +316,18 @@ class TimerView(Gtk.Box):
         self.append(extra)
 
     # -- public ------------------------------------------------------
+
+    def set_durations(self, focus_min: int, short_break_min: int) -> None:
+        """Apply new durations (e.g. from Settings).
+
+        Takes effect immediately when idle; a running session keeps its
+        current countdown and the new values apply to the next one.
+        """
+        self._focus_min = max(1, int(focus_min))
+        self._short_break_min = max(1, int(short_break_min))
+        if self._tick_id is None:
+            self._switch_mode(self.MODE_FOCUS, autostart=False)
+            self._state_label.set_text("Ready")
 
     def bind_task(self, task) -> None:
         """Bind (or rebind) this view to a task. Resets to a fresh focus."""

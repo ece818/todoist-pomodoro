@@ -16,6 +16,73 @@ class Config:
     short_break_min: int = 5
 
 
+@dataclass
+class TimerSettings:
+    """User-chosen durations, persisted to settings.json (see main.py)."""
+
+    focus_min: int = 25
+    short_break_min: int = 5
+
+
+def _clamp_minutes(value: int, lo: int, hi: int, default: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(hi, number))
+
+
+def load_timer_settings(
+    path: str | Path, focus_default: int = 25, break_default: int = 5
+) -> TimerSettings:
+    """Read settings.json; missing/corrupt file yields defaults."""
+    import json
+
+    focus_default = _clamp_minutes(focus_default, 1, 180, 25)
+    break_default = _clamp_minutes(break_default, 1, 60, 5)
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, ValueError):
+        return TimerSettings(focus_min=focus_default, short_break_min=break_default)
+    if not isinstance(data, dict):
+        return TimerSettings(focus_min=focus_default, short_break_min=break_default)
+    return TimerSettings(
+        focus_min=_clamp_minutes(
+            data.get("focus_min", focus_default), 1, 180, focus_default
+        ),
+        short_break_min=_clamp_minutes(
+            data.get("short_break_min", break_default), 1, 60, break_default
+        ),
+    )
+
+
+def save_timer_settings(path: str | Path, settings: TimerSettings) -> None:
+    """Atomic write of settings.json (tmp file + os.replace)."""
+    import json
+    import os
+    import tempfile
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(
+        {"focus_min": settings.focus_min, "short_break_min": settings.short_break_min}
+    )
+    fd, tmp = tempfile.mkstemp(
+        dir=str(target.parent), prefix=target.name + ".", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _strip_quotes(value: str) -> str:
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):

@@ -22,12 +22,19 @@ except (ImportError, ValueError) as _gi_exc:
     )
     sys.exit(2)
 
-from config import ConfigError, load_config
+from config import (
+    ConfigError,
+    TimerSettings,
+    load_config,
+    load_timer_settings,
+    save_timer_settings,
+)
 from sync import FilterStore, SyncStore
 from todoist import TodoistClient
 from ui_celebrate import CelebrationWindow
 from ui_common import add_close_shortcuts
 from ui_palette import PaletteWindow
+from ui_settings import SettingsDialog
 from ui_timer import TimerView
 from ui_today import TodayPanel
 
@@ -41,10 +48,16 @@ class PomodoroApp(Adw.Application):
         focus_min: int,
         short_break_min: int,
         filter_store: FilterStore | None = None,
+        settings: TimerSettings | None = None,
+        settings_path=None,
     ) -> None:
         super().__init__(application_id="dev.todoist.pomodoro")
         self._store = store
         self._filter_store = filter_store
+        self._settings = settings or TimerSettings(
+            focus_min=focus_min, short_break_min=short_break_min
+        )
+        self._settings_path = settings_path
         self._focus_min = focus_min
         self._short_break_min = short_break_min
         self._stack: Gtk.Stack | None = None
@@ -84,6 +97,10 @@ class PomodoroApp(Adw.Application):
         toolbar_view = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle(title="Todoist Pomodoro"))
+        settings_button = Gtk.Button(label="Settings")
+        settings_button.set_tooltip_text("Timer durations")
+        settings_button.connect("clicked", self._on_settings_clicked)
+        header.pack_end(settings_button)
         toolbar_view.add_top_bar(header)
         toolbar_view.set_content(self._stack)
         win.set_content(toolbar_view)
@@ -123,6 +140,31 @@ class PomodoroApp(Adw.Application):
     def _on_quit_shortcut(self, _widget, _args) -> bool:
         self.quit()
         return True
+
+    def _on_settings_clicked(self, _button: Gtk.Button) -> None:
+        dialog = SettingsDialog(
+            focus_min=self._settings.focus_min,
+            short_break_min=self._settings.short_break_min,
+            on_save=self._on_settings_saved,
+        )
+        dialog.set_transient_for(self.get_active_window())
+        dialog.present()
+
+    def _on_settings_saved(self, focus_min: int, short_break_min: int) -> None:
+        self._settings = TimerSettings(
+            focus_min=max(1, focus_min), short_break_min=max(1, short_break_min)
+        )
+        if self._settings_path is not None:
+            try:
+                save_timer_settings(self._settings_path, self._settings)
+            except OSError:
+                pass
+        self._focus_min = self._settings.focus_min
+        self._short_break_min = self._settings.short_break_min
+        if self._timer_view is not None:
+            self._timer_view.set_durations(
+                self._settings.focus_min, self._settings.short_break_min
+            )
 
     def _on_palette_shortcut(self, _widget, _args) -> bool:
         palette = PaletteWindow(
@@ -168,11 +210,19 @@ def main(argv: list[str] | None = None) -> int:
     store = SyncStore(client, state_path=state_dir / "pending.json")
     store.load_state()
     filter_store = FilterStore(state_dir / "filters.json")
+    settings_path = state_dir / "settings.json"
+    settings = load_timer_settings(
+        settings_path,
+        focus_default=config.focus_min,
+        break_default=config.short_break_min,
+    )
     app = PomodoroApp(
         store,
-        focus_min=config.focus_min,
-        short_break_min=config.short_break_min,
+        focus_min=settings.focus_min,
+        short_break_min=settings.short_break_min,
         filter_store=filter_store,
+        settings=settings,
+        settings_path=settings_path,
     )
     return app.run(sys.argv if argv is None else argv)
 
