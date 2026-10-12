@@ -23,6 +23,7 @@ from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
@@ -106,8 +107,8 @@ def compute_ui(w, h):
         "filter_font": max(26.0, top_h * 0.32),
         "nav_h": nav_h,
         "nav_font": max(28.0, nav_h * 0.36),
-        "status_h": max(36.0, h * 0.015),
-        "status_font": max(20.0, h * 0.009),
+        "status_h": max(40.0, h * 0.016),
+        "status_font": max(24.0, h * 0.011),
         "add_h": add_h,
         "add_font": max(24.0, add_h * 0.30),
         "add_btn_w": max(110.0, w * 0.11),
@@ -216,24 +217,41 @@ def _dark_entry(hint, font_size, radius=14, **kwargs):
 
 
 class FastScrollRail(Widget):
-    """Slim thumb, wide grab zone: hold-and-pull fast scrolling.
+    """Floating slim thumb: overlays content, hides after 3s idle.
 
-    The stock ScrollView bar couples look and hit-area (thin = pretty
-    but ungrabbable). This rail is a fixed-width touch strip showing a
-    thin accent pill sized from the viewport fraction; dragging anywhere
-    in the strip drives the ScrollView's scroll_y directly.
+    Hold-and-pull fast scrolling. The rail floats over the list's right
+    edge (no layout space taken) and only appears while scrolling: any
+    scroll_y change or rail touch shows it and reschedules the 3s hide.
+    While hidden it lets all touches pass through to the rows beneath.
     """
 
-    def __init__(self, scrollview, width=72, **kwargs):
-        super().__init__(size_hint_x=None, width=width, **kwargs)
+    def __init__(self, scrollview, width=44, **kwargs):
+        super().__init__(size_hint_x=None, size_hint_y=1.0, width=width,
+                         pos_hint={"right": 1, "y": 0}, **kwargs)
         self.sv = scrollview
+        self._shown = False
+        self.opacity = 0
+        self._hide_ev = None
         with self.canvas:
             Color(0.27, 0.28, 0.35, 0.55)
             self._track = RoundedRectangle(pos=self.pos, size=self.size,
-                                           radius=[8])
+                                           radius=[4])
             Color(*_ACCENT)
-            self._thumb = RoundedRectangle(pos=self.pos, size=(14, 100),
-                                           radius=[7])
+            self._thumb = RoundedRectangle(pos=self.pos, size=(12, 100),
+                                           radius=[6])
+        self.bind(pos=lambda *_a: self._redraw(),
+                  size=lambda *_a: self._redraw())
+        try:
+            scrollview.bind(scroll_y=lambda *_a: self._on_scroll())
+            for child in list(scrollview.children):
+                try:
+                    child.bind(minimum_height=lambda *_a: self._redraw())
+                    child.bind(height=lambda *_a: self._redraw())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self._redraw()
         self.bind(pos=lambda *_a: self._redraw(),
                   size=lambda *_a: self._redraw())
         try:
@@ -268,19 +286,48 @@ class FastScrollRail(Widget):
                 self._track.size = (0, 0)
                 self._thumb.size = (0, 0)
                 return
-            self._track.pos = (self.x + (self.width - 10) / 2, self.y)
-            self._track.size = (10, H)
+            self._track.pos = (self.x + (self.width - 8) / 2, self.y)
+            self._track.size = (8, H)
             th = max(80.0, frac * H)
-            self._thumb.pos = (self.x + (self.width - 14) / 2,
+            self._thumb.pos = (self.x + (self.width - 12) / 2,
                                self.y + sy * (H - th))
-            self._thumb.size = (14, th)
+            self._thumb.size = (12, th)
         except Exception:
             pass
 
+    def _on_scroll(self, *_args) -> None:
+        self._redraw()
+        self._poke()
+
+    def _poke(self) -> None:
+        """Show the rail and reschedule the 3s auto-hide."""
+        try:
+            if not self._shown:
+                self._shown = True
+                self.opacity = 1
+            if self._hide_ev is not None:
+                try:
+                    self._hide_ev.cancel()
+                except Exception:
+                    pass
+            self._hide_ev = Clock.schedule_once(self._hide, 3)
+        except Exception:
+            pass
+
+    def _hide(self, _dt) -> None:
+        try:
+            self._shown = False
+            self.opacity = 0
+        except Exception:
+            pass
+        finally:
+            self._hide_ev = None
+
     def on_touch_down(self, touch):
         try:
-            if self.collide_point(*touch.pos):
+            if self._shown and self.collide_point(*touch.pos):
                 touch.grab(self)
+                self._poke()
                 self._drag_to(touch.y)
                 return True
         except Exception:
@@ -504,23 +551,23 @@ class TodayScreen(Screen):
             nav.add_widget(b)
         root.add_widget(nav)
 
-        self._status = Label(text="Loading…", size_hint_y=None,
-                             height=_U.get("status_h", 32),
-                             font_size=_U.get("status_font", 17),
+        self._status = Label(text="Loading…", bold=True, size_hint_y=None,
+                             height=_U.get("status_h", 36),
+                             font_size=_U.get("status_font", 24),
                              color=_DIM, halign="left", valign="middle")
         self._status.bind(size=self._status.setter("text_size"))
         root.add_widget(self._status)
-        list_row = BoxLayout(orientation="horizontal", spacing=0)
+        list_wrap = FloatLayout()
         scroll = ScrollView(bar_width=8, bar_color=(0, 0, 0, 0),
                             bar_inactive_color=(0, 0, 0, 0),
                             scroll_type=["content"])
         self._list = GridLayout(cols=1, size_hint_y=None, spacing=8)
         self._list.bind(minimum_height=self._list.setter("height"))
         scroll.add_widget(self._list)
-        list_row.add_widget(scroll)
+        list_wrap.add_widget(scroll)
         self._rail = FastScrollRail(scroll)
-        list_row.add_widget(self._rail)
-        root.add_widget(list_row)
+        list_wrap.add_widget(self._rail)
+        root.add_widget(list_wrap)
 
         add_row = BoxLayout(orientation="horizontal", size_hint_y=None,
                             height=_U.get("add_h", 76), spacing=10)
@@ -556,7 +603,7 @@ class TodayScreen(Screen):
             self._refresh_btn.font_size = _U.get("btn_font", 26)
             for b in self._nav_buttons:
                 b.font_size = _U.get("nav_font", 28)
-            self._status.font_size = _U.get("status_font", 17)
+            self._status.font_size = _U.get("status_font", 24)
             self._add_entry.font_size = _U.get("add_font", 20)
             self._add_btn.font_size = _U.get("add_font", 20)
         except Exception:
@@ -880,7 +927,7 @@ class StatsScreen(Screen):
         refresh.bind(on_release=lambda _b: self.refresh())
         top.add_widget(refresh)
         root.add_widget(top)
-        stats_row = BoxLayout(orientation="horizontal", spacing=0)
+        stats_wrap = FloatLayout()
         scroll = ScrollView(bar_width=8, bar_color=(0, 0, 0, 0),
                             bar_inactive_color=(0, 0, 0, 0),
                             scroll_type=["content"])
@@ -890,9 +937,9 @@ class StatsScreen(Screen):
         self._body.bind(texture_size=lambda _i, v: setattr(self._body, "height", v[1]),
                         width=lambda _i, v: setattr(self._body, "text_size", (v, None)))
         scroll.add_widget(self._body)
-        stats_row.add_widget(scroll)
-        stats_row.add_widget(FastScrollRail(scroll))
-        root.add_widget(stats_row)
+        stats_wrap.add_widget(scroll)
+        stats_wrap.add_widget(FastScrollRail(scroll))
+        root.add_widget(stats_wrap)
         self.add_widget(root)
 
     def on_pre_enter(self):
