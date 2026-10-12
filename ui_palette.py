@@ -653,7 +653,10 @@ class PaletteWindow(Gtk.Window):
         meta = _meta_label(task, project)
         if meta:
             meta_label = Gtk.Label(label=meta)
-            meta_label.add_css_class("dim-label")
+            if _is_overdue(task):
+                meta_label.add_css_class("error")
+            else:
+                meta_label.add_css_class("dim-label")
             box.append(meta_label)
 
         row.set_child(box)
