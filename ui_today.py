@@ -126,6 +126,7 @@ class TodayPanel(Gtk.Box):
         self._project_dropdown.set_tooltip_text("Show tasks from one project")
         toolbar.append(self._project_dropdown)
         self._refresh_button = Gtk.Button(label="Refresh")
+        self._refresh_button.set_tooltip_text("Reload tasks from Todoist")
         self._refresh_button.connect("clicked", self._on_refresh_clicked)
         toolbar.append(self._refresh_button)
         self.append(toolbar)

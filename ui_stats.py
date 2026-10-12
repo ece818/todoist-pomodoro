@@ -46,6 +46,7 @@ class StatsPanel(Gtk.Box):
         title.set_hexpand(True)
         toolbar.append(title)
         refresh_button = Gtk.Button(label="Refresh")
+        refresh_button.set_tooltip_text("Reload stats from session log")
         refresh_button.connect("clicked", self._on_refresh_clicked)
         toolbar.append(refresh_button)
         self.append(toolbar)
