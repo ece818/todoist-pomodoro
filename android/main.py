@@ -8,6 +8,8 @@ Entry point for buildozer (android/main.py).
 """
 
 import os
+import math
+import random
 import sys
 import threading
 import time
@@ -18,6 +20,7 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.graphics import Color, RoundedRectangle
+from kivy.properties import NumericProperty
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
@@ -118,6 +121,11 @@ def compute_ui(w, h):
         "add_font": max(24.0, add_h * 0.30),
         "add_btn_w": max(110.0, w * 0.11),
         "banner_h": banner_h,
+        "card_h": max(112.0, h * 0.085),
+        "pill_h": max(96.0, h * 0.072),
+        "pill_font": max(32.0, h * 0.016),
+        "check_d": max(56.0, h * 0.032),
+        "ghost_font": max(26.0, h * 0.013),
         "timer_back_h": max(64.0, h * 0.045),
         "timer_back_font": max(26.0, h * 0.014),
         "timer_task_font": min(max(32.0, w * 0.075), 64.0),
@@ -702,6 +710,194 @@ class TodayScreen(Screen):
             Clock.schedule_once(lambda _dt: self.refresh())
 
 
+# -- focus-todo night theme (procedural backdrop, no image assets) ---------
+_NIGHT_STOPS = (
+    (0.00, (0.03, 0.04, 0.13, 1)),
+    (0.36, (0.10, 0.10, 0.28, 1)),
+    (0.55, (0.24, 0.21, 0.44, 1)),
+    (0.60, (0.09, 0.08, 0.21, 1)),
+    (0.66, (0.06, 0.06, 0.15, 1)),
+    (1.00, (0.015, 0.015, 0.045, 1)),
+)
+_CARD_BG = (0.10, 0.10, 0.15, 0.94)
+_STAT_RED = (0.98, 0.55, 0.55, 1)
+_WHITE = (1, 1, 1, 1)
+_NAV_IDLE = (0.60, 0.62, 0.70, 1)
+
+
+def _night_color(p):
+    """Sky/lake gradient color at fraction p from the top (0..1)."""
+    stops = _NIGHT_STOPS
+    if p <= stops[0][0]:
+        return stops[0][1]
+    for (p0, c0), (p1, c1) in zip(stops, stops[1:]):
+        if p <= p1:
+            t = (p - p0) / max(1e-6, p1 - p0)
+            return (c0[0] + (c1[0] - c0[0]) * t,
+                    c0[1] + (c1[1] - c0[1]) * t,
+                    c0[2] + (c1[2] - c0[2]) * t, 1)
+    return stops[-1][1]
+
+
+class NightBackdrop(Widget):
+    """Procedural starry-night lake + mountain scene.
+
+    Painted once per resize from a fixed seed, so the layout is stable
+    and no image asset needs shipping.
+    """
+
+    BANDS = 28
+    STARS = 150
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(pos=lambda *_a: self._redraw(),
+                  size=lambda *_a: self._redraw())
+        self._redraw()
+
+    def _redraw(self, *_args):
+        try:
+            x, y = float(self.x), float(self.y)
+            w, h = float(self.width), float(self.height)
+            if w <= 0 or h <= 0:
+                return
+            self.canvas.clear()
+            from kivy.graphics import (Color, Ellipse, Line, Point,
+                                       Rectangle, Triangle)
+            with self.canvas:
+                for i in range(self.BANDS):
+                    p0, p1 = i / self.BANDS, (i + 1) / self.BANDS
+                    Color(*_night_color((p0 + p1) / 2))
+                    y_top = y + h * (1 - p0)
+                    y_bot = y + h * (1 - p1)
+                    Rectangle(pos=(x, y_bot), size=(w, y_top - y_bot))
+                rng = random.Random(11)
+                buckets: dict = {}
+                for _ in range(self.STARS):
+                    sx = x + rng.random() * w
+                    sy = y + h * (0.44 + rng.random() * 0.54)
+                    key = (round(0.2 + rng.random() * 0.65, 1),
+                           round(1 + rng.random() * 1.6, 1))
+                    buckets.setdefault(key, []).extend([sx, sy])
+                for (alpha, size), pts in buckets.items():
+                    Color(1, 1, 1, alpha)
+                    Point(points=pts, pointsize=size)
+                Color(0.90, 0.92, 1, 0.10)
+                Ellipse(pos=(x + w * 0.78 - 60, y + h * 0.70 - 60),
+                        size=(120, 120))
+                Color(0.95, 0.96, 1, 0.9)
+                Ellipse(pos=(x + w * 0.78 - 8, y + h * 0.70 - 8),
+                        size=(16, 16))
+                horizon = y + h * 0.40
+                self._ridge(x, w, h, horizon, (0.09, 0.09, 0.19, 1),
+                            seed_phase=0.0, fuji=True)
+                self._ridge(x, w, h, horizon - h * 0.015,
+                            (0.03, 0.03, 0.07, 1),
+                            seed_phase=100.0, fuji=False)
+                for k in range(8):
+                    ly = horizon - h * (0.03 + k * 0.028)
+                    lw = w * (0.10 + rng.random() * 0.30)
+                    lx = (x + (w - lw) / 2
+                          + (rng.random() - 0.5) * w * 0.3)
+                    Color(0.55, 0.58, 0.85, 0.10)
+                    Line(points=[lx, ly, lx + lw, ly], width=1.2)
+        except Exception:
+            pass
+
+    def _ridge(self, x, w, h, base, color, seed_phase, fuji):
+        """Filled ridge silhouette with a central Fuji-like cone."""
+        from kivy.graphics import Color, Triangle
+        n_seg = 26
+        fuji_cx = x + w * 0.5
+        fuji_hw = w * 0.17
+        fuji_ht = h * (0.115 if fuji else 0.0)
+        peaks = []
+        for i in range(n_seg + 1):
+            px = x + w * i / n_seg
+            n = h * (0.015 + 0.035 * abs(
+                math.sin(i * 1.7 + seed_phase) * 0.6
+                + math.sin(i * 0.6 + seed_phase * 2) * 0.4))
+            if fuji:
+                cone = fuji_ht * max(0.0, 1 - abs(px - fuji_cx) / fuji_hw)
+                n = max(n, cone)
+            peaks.append((px, base + n))
+        Color(*color)
+        skirt = base - h * 0.02
+        for i in range(n_seg):
+            x0, y0 = peaks[i]
+            x1, y1 = peaks[i + 1]
+            Triangle(points=[x0, skirt, x1, skirt, x1, y1])
+            Triangle(points=[x0, skirt, x1, y1, x0, y0])
+
+
+class TickRing(Widget):
+    """120-tick progress ring; ticks light up with elapsed fraction."""
+
+    progress = NumericProperty(0.0)
+    ticks = 120
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(pos=lambda *_a: self._redraw(),
+                  size=lambda *_a: self._redraw(),
+                  progress=lambda *_a: self._redraw())
+        self._redraw()
+
+    def _redraw(self, *_args):
+        try:
+            from kivy.graphics import Color, Line
+            w, h = float(self.width), float(self.height)
+            if w <= 0 or h <= 0:
+                return
+            self.canvas.clear()
+            cx, cy = float(self.x) + w / 2, float(self.y) + h / 2
+            radius = min(w, h) / 2 - 12
+            if radius <= 0:
+                return
+            done = min(1.0, max(0.0, float(self.progress)))
+            with self.canvas:
+                for i in range(self.ticks):
+                    ang = -math.pi / 2 + 2 * math.pi * i / self.ticks
+                    if (i / self.ticks) < done:
+                        Color(1, 1, 1, 0.92)
+                    else:
+                        Color(1, 1, 1, 0.16)
+                    c, s = math.cos(ang), math.sin(ang)
+                    Line(points=[cx + (radius - 11) * c,
+                                 cy + (radius - 11) * s,
+                                 cx + radius * c, cy + radius * s],
+                         width=3)
+        except Exception:
+            pass
+
+
+class CircleCheck(ButtonBehavior, Widget):
+    """Ring checkbox: tap completes the bound task."""
+
+    def __init__(self, diameter=60, **kwargs):
+        kwargs.setdefault("size_hint", (None, None))
+        super().__init__(**kwargs)
+        self.size = (diameter, diameter)
+        self.bind(pos=lambda *_a: self._redraw(),
+                  size=lambda *_a: self._redraw())
+        self._redraw()
+
+    def _redraw(self, *_args):
+        try:
+            from kivy.graphics import Color, Line
+            d = min(float(self.width), float(self.height))
+            if d <= 0:
+                return
+            self.canvas.clear()
+            cx = float(self.x) + float(self.width) / 2
+            cy = float(self.y) + float(self.height) / 2
+            with self.canvas:
+                Color(0.72, 0.74, 0.84, 1)
+                Line(circle=(cx, cy, d / 2 - 3), width=3)
+        except Exception:
+            pass
+
+
 class TimerScreen(Screen):
     _FG = (0.90, 0.91, 0.97, 1)
     _DIM = (0.65, 0.68, 0.78, 1)
@@ -710,73 +906,115 @@ class TimerScreen(Screen):
 
     def __init__(self, **kwargs):
         super().__init__(name="timer", **kwargs)
-        root = BoxLayout(orientation="vertical", padding=20, spacing=10)
-        _paint_bg(root, _BG)
-        top = BoxLayout(orientation="horizontal", size_hint_y=None,
-                        height=_U.get("timer_back_h", 64), spacing=10)
-        self._back_btn = _flat_button("< Today",
-                                        _U.get("timer_back_font", 26),
-                                        size_hint_x=0.38)
-        self._back_btn.bind(on_release=lambda _b: setattr(self.manager, "current", "today"))
-        top.add_widget(self._back_btn)
-        self._mode_label = Label(text="FOCUS", bold=True,
-                                 font_size=_U.get("timer_mode_font", 26),
-                                 color=self._ACCENT, halign="center",
-                                 valign="middle", size_hint_x=0.62)
-        self._mode_label.bind(size=self._mode_label.setter("text_size"))
-        top.add_widget(self._mode_label)
-        root.add_widget(top)
-        self._task_label = Label(text="No task", bold=True,
-                                 font_size=_U.get("timer_task_font", 34),
-                                 color=self._FG, halign="center",
-                                 valign="middle", size_hint_y=0.42)
-        self._task_label.bind(size=self._task_label.setter("text_size"))
-        root.add_widget(self._task_label)
-        self._clock = Label(text="25:00", bold=True,
-                            font_size=_U.get("clock_font", 170),
-                            color=self._FG, halign="center",
-                            valign="middle", size_hint_y=1.5,
-                            shorten=False)
-        self._clock.bind(size=self._clock.setter("text_size"))
-        root.add_widget(self._clock)
-        self._progress = Label(text="", font_size=_U.get("timer_prog_font", 22),
-                               color=self._DIM, halign="center",
-                               size_hint_y=None, height=30)
-        root.add_widget(self._progress)
-        self._state = Label(text="Ready", font_size=_U.get("timer_state_font", 24),
-                            color=self._DIM, halign="center",
-                            size_hint_y=None, height=34)
-        root.add_widget(self._state)
-        row1 = BoxLayout(orientation="horizontal", size_hint_y=None,
-                         height=_U.get("timer_btn_h", 88), spacing=10)
-        self._ctl_buttons: list = []
-        for label, fn in (("Start", self._start), ("Pause", self._pause),
-                          ("Reset", self._reset), ("Break", self._break)):
-            is_primary = (label == "Start")
-            b = _flat_button(label, _U.get("timer_btn_font", 26),
-                             bg=_ACCENT if is_primary else _BTN,
-                             fg=_DARK_TEXT if is_primary else _FG)
-            b.bind(on_release=lambda _b, f=fn: f())
-            self._ctl_buttons.append(b)
-            row1.add_widget(b)
-        root.add_widget(row1)
-        self._done_btn = _flat_button("Mark task done",
-                                      _U.get("timer_btn_font", 26),
-                                      bg=(0.25, 0.55, 0.35, 1),
-                                      fg=(1, 1, 1, 1),
-                                      size_hint_y=None,
-                                      height=_U.get("timer_btn_h", 88))
-        self._done_btn.bind(on_release=lambda _b: self._mark_done())
-        root.add_widget(self._done_btn)
-        self.banner = StatusBanner()
-        root.add_widget(self.banner)
-        self.add_widget(root)
         self._tick_ev = None
         self._remaining = 25 * 60
         self._total = 25 * 60
         self._mode = "focus"
         self._run_start = None
         self._elapsed_base = 0
+        self._pill_fn = self._start
+        self._pill_key = ""
+        root = FloatLayout()
+        root.add_widget(NightBackdrop())
+        content = BoxLayout(orientation="vertical", padding=(20, 14),
+                            spacing=8)
+        card = BoxLayout(orientation="horizontal", size_hint_y=None,
+                         height=_U.get("card_h", 112), spacing=12,
+                         padding=(16, 10))
+        _paint_bg(card, _CARD_BG, radius=24)
+        self._check = CircleCheck(diameter=_U.get("check_d", 60))
+        self._check.bind(on_release=lambda *_a: self._complete_bound())
+        card.add_widget(self._check)
+        mid = BoxLayout(orientation="vertical", spacing=2)
+        self._task_title = Label(
+            text="No task", bold=True,
+            font_size=_U.get("timer_task_font", 34), color=_WHITE,
+            halign="left", valign="middle")
+        self._task_title.bind(size=self._task_title.setter("text_size"))
+        mid.add_widget(self._task_title)
+        self._task_stats = Label(
+            text="", font_size=_U.get("timer_prog_font", 22),
+            color=_STAT_RED, halign="left", valign="middle")
+        self._task_stats.bind(size=self._task_stats.setter("text_size"))
+        mid.add_widget(self._task_stats)
+        card.add_widget(mid)
+        close = Button(
+            text="X", font_size=_U.get("timer_back_font", 26), bold=True,
+            size_hint_x=None, width=64, background_normal="",
+            background_down="", background_color=(0, 0, 0, 0), color=_DIM)
+        close.bind(on_release=lambda _b: setattr(self.manager, "current",
+                                                 "today"))
+        card.add_widget(close)
+        content.add_widget(card)
+        content.add_widget(Widget(size_hint_y=0.10))
+        zone = FloatLayout(size_hint_y=1.35)
+        self._ring = TickRing()
+        zone.add_widget(self._ring)
+        self._clock = Label(
+            text="25:00", bold=True, font_size=_U.get("clock_font", 170),
+            color=_WHITE, halign="center", valign="middle", shorten=False)
+        self._clock.bind(size=self._clock.setter("text_size"))
+        zone.add_widget(self._clock)
+        content.add_widget(zone)
+        self._progress = Label(
+            text="", font_size=_U.get("timer_prog_font", 22),
+            color=(1, 1, 1, 0.55), halign="center",
+            size_hint_y=None, height=30)
+        content.add_widget(self._progress)
+        self._state = Label(
+            text="Ready", font_size=_U.get("timer_state_font", 24),
+            color=(1, 1, 1, 0.65), halign="center",
+            size_hint_y=None, height=30)
+        content.add_widget(self._state)
+        pill_wrap = AnchorLayout(anchor_x="center", anchor_y="center",
+                                size_hint_y=None,
+                                height=_U.get("pill_h", 96))
+        self._pill = _flat_button(
+            "Start", _U.get("pill_font", 32), bg=_WHITE, fg=_DARK_TEXT,
+            radius=60, size_hint=(0.72, None),
+            height=_U.get("pill_h", 96))
+        self._pill.bind(on_release=lambda _b: self._pill_action())
+        pill_wrap.add_widget(self._pill)
+        content.add_widget(pill_wrap)
+        sec = BoxLayout(orientation="horizontal", size_hint_y=None,
+                        height=56, spacing=0)
+        sec.add_widget(Widget())
+        self._reset_link = Button(
+            text="Reset", font_size=_U.get("ghost_font", 26),
+            size_hint_x=None, width=180, background_normal="",
+            background_down="", background_color=(0, 0, 0, 0),
+            color=_DIM)
+        self._reset_link.bind(on_release=lambda _b: self._reset())
+        sec.add_widget(self._reset_link)
+        self._done_link = Button(
+            text="Task done", font_size=_U.get("ghost_font", 26),
+            size_hint_x=None, width=220, background_normal="",
+            background_down="", background_color=(0, 0, 0, 0),
+            color=self._GREEN)
+        self._done_link.bind(on_release=lambda _b: self._mark_done())
+        sec.add_widget(self._done_link)
+        sec.add_widget(Widget())
+        content.add_widget(sec)
+        self.banner = StatusBanner()
+        content.add_widget(self.banner)
+        nav = BoxLayout(orientation="horizontal", size_hint_y=None,
+                        height=_U.get("nav_h", 72) + 8, spacing=4)
+        self._nav_btns: dict = {}
+        for label, screen in (("Today", "today"), ("Timer", "timer"),
+                              ("Stats", "stats"), ("Settings", "settings")):
+            active = (label == "Timer")
+            b = Button(
+                text=label, font_size=_U.get("nav_font", 30),
+                bold=active, background_normal="", background_down="",
+                background_color=(0, 0, 0, 0),
+                color=_WHITE if active else _NAV_IDLE)
+            b.bind(on_release=lambda _b, s=screen: setattr(self.manager,
+                                                           "current", s))
+            self._nav_btns[label] = b
+            nav.add_widget(b)
+        content.add_widget(nav)
+        root.add_widget(content)
+        self.add_widget(root)
         self._set_mode("focus")
         try:
             Window.bind(size=self._on_window_size)
@@ -792,27 +1030,91 @@ class TimerScreen(Screen):
 
     def _apply_sizes(self) -> None:
         try:
-            self._back_btn.font_size = _U.get("timer_back_font", 26)
-            self._back_btn.height = _U.get("timer_back_h", 64)
-            self._mode_label.font_size = _U.get("timer_mode_font", 26)
-            self._task_label.font_size = _U.get("timer_task_font", 34)
+            self._task_title.font_size = _U.get("timer_task_font", 34)
+            self._task_stats.font_size = _U.get("timer_prog_font", 22)
             self._clock.font_size = _U.get("clock_font", 170)
             self._progress.font_size = _U.get("timer_prog_font", 22)
             self._state.font_size = _U.get("timer_state_font", 24)
-            for b in self._ctl_buttons:
-                b.font_size = _U.get("timer_btn_font", 26)
-                b.height = _U.get("timer_btn_h", 88)
-            self._done_btn.font_size = _U.get("timer_btn_font", 26)
-            self._done_btn.height = _U.get("timer_btn_h", 88)
+            self._pill.font_size = _U.get("pill_font", 32)
+            self._pill.height = _U.get("pill_h", 96)
+            self._reset_link.font_size = _U.get("ghost_font", 26)
+            self._done_link.font_size = _U.get("ghost_font", 26)
+            for b in self._nav_btns.values():
+                b.font_size = _U.get("nav_font", 30)
         except Exception:
             pass
 
     def _set_mode(self, mode: str) -> None:
         self._mode = mode
-        is_break = (mode == "break")
+        self._update_pill()
+
+    def _pill_spec(self):
+        """(label, action) for the single primary pill button."""
+        running = self._tick_ev is not None
+        if running:
+            return ("Pause", self._pause)
+        if self._mode == "focus" and self._remaining <= 0:
+            return ("Start Break", self._break)
+        if self._remaining < self._total or self._elapsed_base > 0:
+            return ("Resume", self._start)
+        return ("Start", self._start)
+
+    def _update_pill(self) -> None:
         try:
-            self._mode_label.text = "BREAK" if is_break else "FOCUS"
-            self._mode_label.color = self._GREEN if is_break else self._ACCENT
+            label, fn = self._pill_spec()
+            if getattr(self, "_pill_key", None) != label:
+                self._pill.text = label
+                self._pill_key = label
+            self._pill_fn = fn
+        except Exception:
+            pass
+
+    def _pill_action(self) -> None:
+        try:
+            fn = getattr(self, "_pill_fn", None) or self._start
+        except Exception:
+            fn = self._start
+        fn()
+
+    def _complete_bound(self) -> None:
+        try:
+            task = App.get_running_app().timer_task
+        except Exception:
+            task = None
+        if task is not None:
+            App.get_running_app().complete_task(task)
+
+    def _refresh_task_card(self) -> None:
+        """Task title + per-task focus stats (hours / finished sessions)."""
+        try:
+            app = App.get_running_app()
+            task = app.timer_task
+        except Exception:
+            return
+        try:
+            if task is None:
+                self._task_title.text = "No task"
+                self._task_stats.text = ""
+                self._done_link.disabled = True
+                self._done_link.opacity = 0.4
+                return
+            self._task_title.text = _display(task.content, 60)
+            tid = str(getattr(task, "id", "") or "")
+            total, count = 0, 0
+            try:
+                for s in app.session_store.read_all():
+                    if (str(getattr(s, "task_id", "") or "") == tid
+                            and getattr(s, "finished", False)):
+                        total += int(getattr(s, "duration_sec", 0) or 0)
+                        count += 1
+            except Exception:
+                pass
+            if count:
+                self._task_stats.text = f"{total / 3600:.1f} / {count}"
+            else:
+                self._task_stats.text = "No focus yet"
+            self._done_link.disabled = False
+            self._done_link.opacity = 1
         except Exception:
             pass
 
@@ -824,8 +1126,7 @@ class TimerScreen(Screen):
             self._remaining = self._total
             self._elapsed_base = 0
             self._set_mode("focus")
-        task = app.timer_task
-        self._task_label.text = _display(task.content, 60) if task is not None else "No task"
+        self._refresh_task_card()
         self._apply_sizes()
         self._render()
 
@@ -836,8 +1137,10 @@ class TimerScreen(Screen):
             done = max(0, total - max(0, int(self._remaining)))
             pct = int(round(100.0 * done / total))
             self._progress.text = f"{_fmt_clock(done)} of {_fmt_clock(total)} · {pct}%"
+            self._ring.progress = done / total
         except Exception:
             pass
+        self._update_pill()
 
     def _start(self):
         if self._tick_ev is not None:
@@ -847,6 +1150,7 @@ class TimerScreen(Screen):
         self._run_start = time.monotonic()
         self._tick_ev = Clock.schedule_interval(self._tick, 1)
         self._state.text = "Focusing…"
+        self._update_pill()
 
     def _tick(self, _dt):
         self._remaining = max(0, self._total - (self._elapsed_base + int(time.monotonic() - self._run_start)))
@@ -863,6 +1167,7 @@ class TimerScreen(Screen):
         self._remaining = max(0, self._total - self._elapsed_base)
         self._render()
         self._state.text = "Paused"
+        self._update_pill()
 
     def _worked_sec(self):
         if self._tick_ev is not None:
@@ -883,6 +1188,8 @@ class TimerScreen(Screen):
         self._remaining = self._total
         self._render()
         self._state.text = "Ready"
+        self._refresh_task_card()
+        self._update_pill()
 
     def _break(self):
         self._reset(log_partial=True)
@@ -903,6 +1210,8 @@ class TimerScreen(Screen):
         self._remaining = self._total
         self._render()
         self._state.text = "Done — take a break or reset."
+        self._refresh_task_card()
+        self._update_pill()
 
     def _mark_done(self):
         task = App.get_running_app().timer_task
@@ -920,6 +1229,7 @@ class TimerScreen(Screen):
             return False
         self._reset(log_partial=True)
         self._state.text = "Ready — task completed."
+        self._update_pill()
         return True
 
 

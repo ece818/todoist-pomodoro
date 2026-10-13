@@ -18,7 +18,7 @@ except (ImportError, ValueError) as _gi_exc:
         "This app needs GTK4 + libadwaita + PyGObject "
         f"(could not import gi: {_gi_exc}). "
         "On Debian/Ubuntu: sudo apt install python3-gi gir1.2-gtk-4.0 "
-        "gir1.2-adwaita-1.",
+        "gir1.2-adw-1.",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -109,15 +109,10 @@ class PomodoroApp(Adw.Application):
         self._timer_view.set_on_mark_done(self._on_mark_task_done)
         if self._session_store is not None:
             self._timer_view.set_on_session(self._on_session_logged)
+            self._timer_view.set_session_store(self._session_store)
+        self._timer_view.set_on_navigate(self._show)
 
         timer_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        back_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        back_bar.set_margin_top(8)
-        back_bar.set_margin_start(8)
-        back = Gtk.Button(label="← Today")
-        back.connect("clicked", lambda _b: self._show("today"))
-        back_bar.append(back)
-        timer_page.append(back_bar)
         timer_page.append(self._timer_view)
         self._stack.add_titled(timer_page, "timer", "Timer")
 
