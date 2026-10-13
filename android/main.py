@@ -229,6 +229,36 @@ def _dark_entry(hint, font_size, radius=14, **kwargs):
     return t
 
 
+def _paste_into(entry, status=None) -> bool:
+    """Fill a TextInput from the system clipboard; True when pasted.
+
+    Long-press/Gboard paste is unreliable in Kivy's SDL text input
+    (worse on password fields), so token fields get a real button.
+    """
+    try:
+        from kivy.core.clipboard import Clipboard
+        text = (Clipboard.paste() or "").strip()
+    except Exception:
+        text = ""
+    if text:
+        try:
+            entry.text = text
+        except Exception:
+            return False
+        if status is not None:
+            try:
+                status.text = ""
+            except Exception:
+                pass
+        return True
+    if status is not None:
+        try:
+            status.text = "Clipboard is empty — copy the token first."
+        except Exception:
+            pass
+    return False
+
+
 class FastScrollRail(Widget):
     """Floating slim thumb: overlays content, hides after 3s idle.
 
@@ -443,12 +473,20 @@ class SetupScreen(Screen):
             color=_DIM,
             font_size=_U.get("setup_entry_font", 34),
             halign="center"))
+        token_row = BoxLayout(orientation="horizontal", spacing=10,
+                                size_hint_y=None,
+                                height=_U.get("setup_entry_h", 64))
         self._entry = _dark_entry("Todoist API token",
-                                  _U.get("setup_entry_font", 34),
-                                  size_hint_y=None,
-                                  height=_U.get("setup_entry_h", 64))
+                                  _U.get("setup_entry_font", 34))
         self._entry.password = True
-        box.add_widget(self._entry)
+        token_row.add_widget(self._entry)
+        paste_btn = _flat_button("Paste", _U.get("setup_entry_font", 34),
+                                 bg=_ACCENT, fg=_DARK_TEXT,
+                                 size_hint_x=None, width=180)
+        paste_btn.bind(on_release=lambda _b: _paste_into(self._entry,
+                                                         self._status))
+        token_row.add_widget(paste_btn)
+        box.add_widget(token_row)
         self._status = Label(text="", halign="center", color=_DIM)
         box.add_widget(self._status)
         box.add_widget(Widget(size_hint_y=1))
@@ -1374,11 +1412,19 @@ class SettingsScreen(Screen):
         root.add_widget(Label(text="Todoist API token:", color=_FG,
                               font_size=_U.get("setup_entry_font", 34),
                               size_hint_y=None, height=_U.get("setup_entry_font", 34) * 2))
-        self._token = _dark_entry("", _U.get("setup_entry_font", 34),
-                                  size_hint_y=None,
-                                  height=_U.get("setup_entry_h", 64))
+        self._token = _dark_entry("", _U.get("setup_entry_font", 34))
         self._token.password = True
-        root.add_widget(self._token)
+        token_row = BoxLayout(orientation="horizontal", spacing=10,
+                              size_hint_y=None,
+                              height=_U.get("setup_entry_h", 64))
+        token_row.add_widget(self._token)
+        paste_btn = _flat_button("Paste", _U.get("setup_entry_font", 34),
+                                 bg=_ACCENT, fg=_DARK_TEXT,
+                                 size_hint_x=None, width=180)
+        paste_btn.bind(on_release=lambda _b: _paste_into(self._token,
+                                                         self._status))
+        token_row.add_widget(paste_btn)
+        root.add_widget(token_row)
         self._status = Label(text="", color=_DIM,
                              font_size=_U.get("setup_entry_font", 34))
         root.add_widget(self._status)
