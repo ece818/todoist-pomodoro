@@ -58,13 +58,15 @@ def _display(text, limit=None):
 
     The bundled device font has no color-emoji glyphs (tofu boxes) and
     Kivy's on-device shorten/text measurement misbehaves, so strip
-    astral-plane characters and truncate in Python. Data untouched.
+    astral-plane characters and truncate in Python. The check-mark
+    dingbats U+2713/U+2714 also render as tofu on-device, so drop those
+    too. Data untouched.
     """
     if limit is None:
         limit = _U.get("trunc", 30)
     clean = "".join(
         ch for ch in str(text or "")
-        if ord(ch) < 0x10000 and ch not in ("\uFE0F", "\u200D")
+        if ord(ch) < 0x10000 and ch not in ("\uFE0F", "\u200D", "\u2713", "\u2714")
     ).strip()
     if len(clean) > limit:
         return clean[: limit - 1] + "…"
@@ -583,7 +585,16 @@ def _task_is_overdue(task) -> bool:
 
 
 class TaskRow(ButtonBehavior, BoxLayout):
-    """One task: checkbox completes, single tap opens the timer."""
+    """One task: checkbox completes, single tap opens the timer.
+
+    Press-and-hold anywhere on the row body opens the same task menu
+    as the ··· button. Implemented with a 0.5s Clock timer: movement
+    beyond tolerance or release cancels it; touches grabbed by the
+    checkbox/menu children never arm it.
+    """
+
+    LONGPRESS_SEC = 0.5
+    MOVE_TOL = 12.0
 
     def __init__(self, task, meta, overdue=False, **kwargs):
         super().__init__(orientation="horizontal", size_hint_y=None,
@@ -591,9 +602,14 @@ class TaskRow(ButtonBehavior, BoxLayout):
                          **kwargs)
         _paint_bg(self, _CARD, radius=18)
         self.task = task
+        self._lp_ev = None
+        self._lp_touch = None
+        self._lp_pos = None
+        self._lp_fired = False
         check = CircleCheck(diameter=_U.get("check_d", 80))
         check.bind(on_release=lambda *_a: self._complete())
         self.add_widget(check)
+        self._check_w = check
         mid = BoxLayout(orientation="vertical", spacing=2)
         mid.add_widget(_left_aligned(
             _display(task.content), {"font_size": _U.get("name_font", 30),
@@ -612,8 +628,73 @@ class TaskRow(ButtonBehavior, BoxLayout):
                       color=_ACCENT)
         menu.bind(on_release=lambda _b: App.get_running_app().open_task_menu(task))
         self.add_widget(menu)
+        self._menu_w = menu
+
+    def _child_grabbed(self, touch):
+        """True when the touch began on the checkbox/menu children."""
+        try:
+            for child in (getattr(self, "_check_w", None),
+                          getattr(self, "_menu_w", None)):
+                if child is not None and child.collide_point(*touch.pos):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def on_touch_down(self, touch):
+        handled = super().on_touch_down(touch)
+        if self.collide_point(*touch.pos) and not self._child_grabbed(touch):
+            self._cancel_longpress()
+            self._lp_fired = False
+            self._lp_touch = touch
+            self._lp_pos = (touch.x, touch.y)
+            self._lp_ev = Clock.schedule_once(self._fire_longpress,
+                                              self.LONGPRESS_SEC)
+        return handled
+
+    def on_touch_move(self, touch):
+        if touch is self._lp_touch and self._lp_pos is not None:
+            try:
+                dx = touch.x - self._lp_pos[0]
+                dy = touch.y - self._lp_pos[1]
+            except Exception:
+                dx = dy = 0.0
+            if dx * dx + dy * dy > self.MOVE_TOL * self.MOVE_TOL:
+                self._cancel_longpress()
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if touch is self._lp_touch:
+            self._cancel_longpress()
+        return super().on_touch_up(touch)
+
+    def _cancel_longpress(self):
+        if self._lp_ev is not None:
+            try:
+                self._lp_ev.cancel()
+            except Exception:
+                pass
+            self._lp_ev = None
+        self._lp_touch = None
+        self._lp_pos = None
+
+    def _fire_longpress(self, _dt):
+        self._lp_ev = None
+        touch = self._lp_touch
+        self._lp_touch = None
+        self._lp_pos = None
+        if self.parent is None or touch is None:
+            return
+        self._lp_fired = True
+        try:
+            App.get_running_app().open_task_menu(self.task)
+        except Exception:
+            self._lp_fired = False
 
     def on_release(self):
+        if self._lp_fired:
+            self._lp_fired = False
+            return
         App.get_running_app().open_timer(self.task)
 
     def _complete(self):
@@ -976,12 +1057,17 @@ class TickRing(Widget):
 
 
 class CircleCheck(ButtonBehavior, Widget):
-    """Ring checkbox: tap completes the bound task."""
+    """Ring checkbox: tap completes the bound task.
+
+    size_hint_y=1 so a horizontal BoxLayout row gives it the full row
+    height; _redraw centers the ring, keeping it vertically centered
+    instead of parked at the row bottom.
+    """
 
     def __init__(self, diameter=60, **kwargs):
-        kwargs.setdefault("size_hint", (None, None))
+        kwargs.setdefault("size_hint", (None, 1))
         super().__init__(**kwargs)
-        self.size = (diameter, diameter)
+        self.width = diameter
         self.bind(pos=lambda *_a: self._redraw(),
                   size=lambda *_a: self._redraw())
         self._redraw()
@@ -1473,8 +1559,35 @@ class StatsScreen(Screen):
         hero.add_widget(self._stat_card(str(data["streak"]),
                                         "Streak", _FG))
         self._stats_list.add_widget(hero)
-        self._stat_section("By project", data["by_project"] or {}, 5)
+        self._stat_section("By project", self._resolve_projects(data), 5)
         self._stat_section("By task", data["by_task"] or {}, 20)
+
+    @staticmethod
+    def _resolve_projects(data) -> dict:
+        """Map stored 'id:<guid>' project keys to known names.
+
+        Sessions logged before project_name was recorded keep their
+        'id:' fallback key (see sessions.stats); resolve them at display
+        time like the desktop stats view does, merging seconds on collision.
+        """
+        by_project = dict(data.get("by_project") or {})
+        try:
+            store = App.get_running_app().store
+        except Exception:
+            store = None
+        if store is None:
+            return by_project
+        resolved: dict = {}
+        for key, sec in by_project.items():
+            name = key
+            if key.startswith("id:"):
+                try:
+                    known = store.project_name(key[3:]) or ""
+                except Exception:
+                    known = ""
+                name = known or key
+            resolved[name] = resolved.get(name, 0) + sec
+        return resolved
 
 
 class SettingsScreen(Screen):
@@ -1917,10 +2030,16 @@ class PomodoroApp(App):
     def log_session(self, duration_sec, finished):
         try:
             task = self.timer_task
+            project_id = str(getattr(task, "project_id", "") or "") if task else ""
+            try:
+                project_name = self.store.project_name(project_id) if project_id else ""
+            except Exception:
+                project_name = ""
             self.session_store.log(
                 task_id=str(task.id) if task is not None else "",
                 content=task.content if task is not None else "",
-                project_id=str(getattr(task, "project_id", "") or "") if task else "",
+                project_id=project_id,
+                project_name=project_name,
                 duration_sec=int(duration_sec),
                 finished=finished,
             )
