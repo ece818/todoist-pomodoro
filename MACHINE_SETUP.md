@@ -26,10 +26,12 @@ sudo apt install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-cairo python3
 ```
 
 Android builds require JDK 17 (not newer) plus python-for-android build tools
-(`aclocal` missing breaks the `libffi` recipe):
+(`aclocal` missing breaks the `libffi` recipe; `libltdl-dev` provides the
+`ltdl.m4` macro its `autoreconf` step needs — without it every cold build
+fails with `possibly undefined macro: LT_SYS_SYMBOL_USCORE`):
 
 ```bash
-sudo apt install -y openjdk-17-jdk autoconf automake libtool libtool-bin pkg-config cmake ninja-build zip unzip ccache
+sudo apt install -y openjdk-17-jdk autoconf automake libtool libtool-bin libltdl-dev pkg-config cmake ninja-build zip unzip ccache
 ls /usr/lib/jvm/  # want java-17-openjdk-amd64
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
@@ -66,6 +68,9 @@ This is what makes the next session fast:
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
+# If buildozer lives in a venv, its bin dir must be on PATH too —
+# buildozer shells out to the `cython` binary ("Cython not found" otherwise):
+# export PATH="$PWD/.venv/bin:$JAVA_HOME/bin:$PATH"
 cd android && buildozer android debug  # 15-30 min cold; downloads SDK/NDK/p4a/Gradle. Subsequent builds ~5-10 min.
 ```
 
