@@ -6,7 +6,7 @@ Goal: take a fresh machine (codespace / Linux) from zero to ready, with slow dow
 
 - Repo URL: `https://github.com/ece818/todoist-pomodoro`, branch `main`
 - Todoist API token from the operator (Todoist → Settings → Integrations → Developer). Never commit it. Accepted names: `TODOIST_API_KEY` or `TODOIST_API_TOKEN` (`.env` first, env fallback).
-- Expect ~2GB free for Android toolchain on first build. Check: `df -h .`
+- Expect ~10GB free for Android toolchain on first build (measured ~8.5GB: ~/.buildozer + android/.buildozer + ~/.gradle). Check: `df -h .`
 
 ## 1. Clone + Python deps
 
@@ -22,12 +22,14 @@ pip install buildozer             # only if building the APK on this machine
 Desktop app only (skip on headless build machines):
 
 ```bash
-sudo apt install -y python3-gi gir1.2-gtk-4.0 gir1.2-adwaita-1
+sudo apt install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 ```
 
-Android builds require JDK 17 (not newer):
+Android builds require JDK 17 (not newer) plus python-for-android build tools
+(`aclocal` missing breaks the `libffi` recipe):
 
 ```bash
+sudo apt install -y openjdk-17-jdk autoconf automake libtool libtool-bin pkg-config cmake ninja-build zip unzip ccache
 ls /usr/lib/jvm/  # want java-17-openjdk-amd64
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH

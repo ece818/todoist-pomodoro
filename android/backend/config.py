@@ -124,10 +124,58 @@ def _parse_int(values: dict[str, str], keys: tuple[str, ...], default: int) -> i
     return default
 
 
-def load_config(env_path: str | Path = ".env") -> Config:
+def user_token_path() -> Path:
+    """In-app token file: $XDG_CONFIG_HOME/todoist-pomodoro/token."""
+    import os
+
+    base = os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+    return Path(base) / "todoist-pomodoro" / "token"
+
+
+def load_user_token() -> str:
+    """Token saved via in-app Settings; empty string when never saved."""
+    try:
+        return _strip_quotes(Path(user_token_path()).read_text(encoding="utf-8").strip())
+    except OSError:
+        return ""
+
+
+def save_user_token(token: str) -> Path:
+    """Persist an in-app token with owner-only permissions. Returns path."""
+    cleaned = _strip_quotes((token or "").strip())
+    if not cleaned:
+        raise ConfigError("Token must not be blank.")
+    path = user_token_path()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    import os
+
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(cleaned + "\n")
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return path
+
+
+def load_config(
+    env_path: str | Path = ".env", allow_missing_token: bool = False
+) -> Config:
     """Load Config from a .env file (plus environment fallback for token).
 
-    Token lookup order: TODOIST_API_TOKEN then TODOIST_API_KEY.
+    Token lookup order: TODOIST_API_TOKEN then TODOIST_API_KEY, each
+    from the .env file, then the environment, then the in-app token
+    file saved via Settings (so first-run needs no .env at all).
+    With ``allow_missing_token`` an absent token yields ``token=""``
+    instead of raising, letting the app open into Settings setup.
     """
     import os
 
@@ -138,14 +186,16 @@ def load_config(env_path: str | Path = ".env") -> Config:
         or os.environ.get("TODOIST_API_TOKEN")
         or file_values.get("TODOIST_API_KEY")
         or os.environ.get("TODOIST_API_KEY")
+        or load_user_token()
         or ""
     ).strip()
     # file value already stripped; env value stripped here
     token = _strip_quotes(token)
-    if not token:
+    if not token and not allow_missing_token:
         raise ConfigError(
             "Missing Todoist API token: set TODOIST_API_TOKEN "
-            "(fallback TODOIST_API_KEY) in .env or environment."
+            "(fallback TODOIST_API_KEY) in .env or environment, "
+            "or add it in the app's Settings."
         )
 
     focus_min = _parse_int(file_values, ("FOCUS_MIN", "FOCUS_MINUTES"), 25)
