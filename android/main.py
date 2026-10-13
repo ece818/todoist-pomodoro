@@ -122,6 +122,7 @@ def compute_ui(w, h):
         "add_btn_w": max(110.0, w * 0.11),
         "banner_h": banner_h,
         "card_h": max(112.0, h * 0.085),
+        "zone_h": max(200.0, min(h * 0.64, h - 700.0)),
         "pill_h": max(96.0, h * 0.072),
         "pill_font": max(32.0, h * 0.016),
         "check_d": max(56.0, h * 0.032),
@@ -752,12 +753,11 @@ class TodayScreen(Screen):
 
 # -- focus-todo night theme (procedural backdrop, no image assets) ---------
 _NIGHT_STOPS = (
-    (0.00, (0.03, 0.04, 0.13, 1)),
-    (0.36, (0.10, 0.10, 0.28, 1)),
-    (0.55, (0.24, 0.21, 0.44, 1)),
-    (0.60, (0.09, 0.08, 0.21, 1)),
-    (0.66, (0.06, 0.06, 0.15, 1)),
-    (1.00, (0.015, 0.015, 0.045, 1)),
+    (0.00, (0.02, 0.03, 0.10, 1)),
+    (0.45, (0.07, 0.08, 0.22, 1)),
+    (0.60, (0.11, 0.10, 0.25, 1)),
+    (0.66, (0.035, 0.035, 0.09, 1)),
+    (1.00, (0.01, 0.01, 0.03, 1)),
 )
 _CARD_BG = (0.10, 0.10, 0.15, 0.94)
 _STAT_RED = (0.98, 0.55, 0.55, 1)
@@ -853,38 +853,34 @@ class NightBackdrop(Widget):
                 Color(0.95, 0.96, 1, 0.9)
                 Ellipse(pos=(x + w * 0.78 - 8, y + h * 0.70 - 8),
                         size=(16, 16))
-                horizon = y + h * 0.40
-                self._ridge(x, w, h, horizon, (0.09, 0.09, 0.19, 1),
-                            seed_phase=0.0, fuji=True)
-                self._ridge(x, w, h, horizon - h * 0.015,
-                            (0.03, 0.03, 0.07, 1),
-                            seed_phase=100.0, fuji=False)
-                for k in range(8):
-                    ly = horizon - h * (0.03 + k * 0.028)
-                    lw = w * (0.10 + rng.random() * 0.30)
-                    lx = (x + (w - lw) / 2
-                          + (rng.random() - 0.5) * w * 0.3)
-                    Color(0.55, 0.58, 0.85, 0.10)
-                    Line(points=[lx, ly, lx + lw, ly], width=1.2)
+                # Nebula glows: soft color fields that set this sky apart
+                # from a plain mountain-lake photo.
+                for (fx, fy, fw, fh, tint, alpha) in (
+                        (0.02, 0.62, 0.65, 0.30, (0.36, 0.26, 0.58), 0.10),
+                        (0.45, 0.52, 0.60, 0.26, (0.20, 0.45, 0.55), 0.08),
+                        (0.20, 0.74, 0.55, 0.20, (0.50, 0.30, 0.52), 0.07)):
+                    Color(tint[0], tint[1], tint[2], alpha)
+                    Ellipse(pos=(x + w * fx, y + h * fy),
+                            size=(w * fw, h * fh))
+                horizon = y + h * 0.34
+                self._ridge(x, w, h, horizon, (0.07, 0.07, 0.15, 1),
+                            seed_phase=0.0)
+                self._ridge(x, w, h, horizon - h * 0.02,
+                            (0.02, 0.02, 0.05, 1),
+                            seed_phase=100.0)
         except Exception:
             pass
 
-    def _ridge(self, x, w, h, base, color, seed_phase, fuji):
-        """Filled ridge silhouette with a central Fuji-like cone."""
+    def _ridge(self, x, w, h, base, color, seed_phase):
+        """Gentle rolling-hill silhouette (no dominant peak)."""
         from kivy.graphics import Color, Triangle
         n_seg = 26
-        fuji_cx = x + w * 0.5
-        fuji_hw = w * 0.17
-        fuji_ht = h * (0.115 if fuji else 0.0)
         peaks = []
         for i in range(n_seg + 1):
             px = x + w * i / n_seg
-            n = h * (0.015 + 0.035 * abs(
+            n = h * (0.008 + 0.020 * abs(
                 math.sin(i * 1.7 + seed_phase) * 0.6
                 + math.sin(i * 0.6 + seed_phase * 2) * 0.4))
-            if fuji:
-                cone = fuji_ht * max(0.0, 1 - abs(px - fuji_cx) / fuji_hw)
-                n = max(n, cone)
             peaks.append((px, base + n))
         Color(*color)
         skirt = base - h * 0.02
@@ -1011,8 +1007,8 @@ class TimerScreen(Screen):
                                                  "today"))
         card.add_widget(close)
         content.add_widget(card)
-        content.add_widget(Widget(size_hint_y=0.03))
-        zone = FloatLayout(size_hint_y=1.0)
+        zone = FloatLayout(size_hint_y=None, height=_U.get("zone_h", 900))
+        self._zone = zone
         self._ring = TickRing()
         zone.add_widget(self._ring)
         self._clock = Label(
@@ -1062,6 +1058,7 @@ class TimerScreen(Screen):
         content.add_widget(sec)
         self.banner = StatusBanner()
         content.add_widget(self.banner)
+        content.add_widget(Widget(size_hint_y=1))
         nav = BoxLayout(orientation="horizontal", size_hint_y=None,
                         height=_U.get("nav_h", 72) + 8, spacing=4)
         self._nav_btns: dict = {}
@@ -1097,6 +1094,7 @@ class TimerScreen(Screen):
         try:
             self._task_title.font_size = _U.get("timer_task_font", 34)
             self._task_stats.font_size = _U.get("timer_prog_font", 22)
+            self._zone.height = _U.get("zone_h", 900)
             self._clock.font_size = _U.get("clock_font", 170)
             self._progress.font_size = _U.get("timer_prog_font", 22)
             self._state.font_size = _U.get("timer_state_font", 24)

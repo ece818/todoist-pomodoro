@@ -103,12 +103,11 @@ def play_end_sound() -> None:
 
 
 _NIGHT_STOPS = (
-    (0.00, (0.03, 0.04, 0.13)),
-    (0.36, (0.10, 0.10, 0.28)),
-    (0.55, (0.24, 0.21, 0.44)),
-    (0.60, (0.09, 0.08, 0.21)),
-    (0.66, (0.06, 0.06, 0.15)),
-    (1.00, (0.015, 0.015, 0.045)),
+    (0.00, (0.02, 0.03, 0.10)),
+    (0.45, (0.07, 0.08, 0.22)),
+    (0.60, (0.11, 0.10, 0.25)),
+    (0.66, (0.035, 0.035, 0.09)),
+    (1.00, (0.01, 0.01, 0.03)),
 )
 
 
@@ -126,22 +125,16 @@ def _night_rgb(p: float) -> tuple:
     return stops[-1][1]
 
 
-def _ridge_peaks(width: float, base: float, height: float, seed_phase: float,
-                 fuji: bool) -> list:
-    """Ridge silhouette points with a central Fuji-like cone."""
+def _ridge_peaks(width: float, base: float, height: float,
+                 seed_phase: float) -> list:
+    """Gentle rolling-hill silhouette (no dominant peak)."""
     n_seg = 26
-    cx = width * 0.5
-    hw = width * 0.17
-    ht = height * (0.115 if fuji else 0.0)
     peaks = []
     for i in range(n_seg + 1):
         px = width * i / n_seg
-        n = height * (0.015 + 0.035 * abs(
+        n = height * (0.008 + 0.020 * abs(
             math.sin(i * 1.7 + seed_phase) * 0.6
             + math.sin(i * 0.6 + seed_phase * 2) * 0.4))
-        if fuji:
-            cone = ht * max(0.0, 1 - abs(px - cx) / hw)
-            n = max(n, cone)
         peaks.append((px, base + n))
     return peaks
 
@@ -200,27 +193,25 @@ class FocusNightBackdrop(Gtk.DrawingArea):
             ctx.set_source_rgba(0.95, 0.96, 1, 0.9)
             ctx.arc(w * 0.78, h * 0.30, 8, 0, 2 * math.pi)
             ctx.fill()
-            horizon = h * 0.60
-            for base, color, phase, fuji in (
-                    (horizon, (0.09, 0.09, 0.19), 0.0, True),
-                    (horizon - h * 0.015, (0.03, 0.03, 0.07), 100.0, False)):
+            horizon = h * 0.66
+            for (fx, fy, fw, fh, tint, alpha) in (
+                    (0.02, 0.10, 0.65, 0.30, (0.36, 0.26, 0.58), 0.10),
+                    (0.45, 0.22, 0.60, 0.26, (0.20, 0.45, 0.55), 0.08),
+                    (0.20, 0.06, 0.55, 0.20, (0.50, 0.30, 0.52), 0.07)):
+                ctx.set_source_rgba(tint[0], tint[1], tint[2], alpha)
+                ctx.rectangle(w * fx, h * fy, w * fw, h * fh)
+                ctx.fill()
+            for base, color, phase in (
+                    (horizon, (0.07, 0.07, 0.15), 0.0),
+                    (horizon - h * 0.02, (0.02, 0.02, 0.05), 100.0)):
                 ctx.set_source_rgb(*color)
-                peaks = _ridge_peaks(w, base, h, phase, fuji)
+                peaks = _ridge_peaks(w, base, h, phase)
                 ctx.move_to(0, base - h * 0.02)
                 for px, py in peaks:
                     ctx.line_to(px, py)
                 ctx.line_to(w, base - h * 0.02)
                 ctx.close_path()
                 ctx.fill()
-            for k in range(8):
-                ly = horizon + h * (0.03 + k * 0.028)
-                lw = w * (0.10 + rng.random() * 0.30)
-                lx = (w - lw) / 2 + (rng.random() - 0.5) * w * 0.3
-                ctx.set_source_rgba(0.55, 0.58, 0.85, 0.10)
-                ctx.set_line_width(1.2)
-                ctx.move_to(lx, ly)
-                ctx.line_to(lx + lw, ly)
-                ctx.stroke()
         except Exception:
             pass
 
@@ -507,8 +498,8 @@ class TimerView(Gtk.Box):
         page.append(card)
 
         center = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        center.set_vexpand(True)
-        center.set_valign(Gtk.Align.CENTER)
+        center.set_vexpand(False)
+        center.set_valign(Gtk.Align.START)
         ring_overlay = Gtk.Overlay()
         self._ring = FocusTickRing(size=360)
         ring_overlay.set_child(self._ring)
@@ -558,6 +549,10 @@ class TimerView(Gtk.Box):
         self._mark_done_button.set_sensitive(task is not None)
         sec_row.append(self._mark_done_button)
         page.append(sec_row)
+
+        bottom_spacer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        bottom_spacer.set_vexpand(True)
+        page.append(bottom_spacer)
 
         nav_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
         nav_row.set_halign(Gtk.Align.CENTER)
