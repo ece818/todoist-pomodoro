@@ -17,15 +17,16 @@ Two builds from one backend:
 - Checkbox completes a task with an Undo banner (5s); the row drops and Undo brings it back.
 - Completing a task stops its running timer and logs worked minutes as a partial session.
 - Stats page: today / 7-day totals, per-project and per-task breakdowns, day streak.
+- Dark theme across all desktop pages.
 - Saved Todoist filters, selectable locally. Projects (Personal vs Work) visible and filterable.
 - `timer` command runs it from any directory.
 
 ## Linux desktop — run it
 
-Requirements: Python 3, GTK4 + libadwaita + PyGObject, `requests`.
+Requirements: Python 3, GTK4 + libadwaita + PyGObject, `requests`, Cairo (`python3-cairo`).
 
 ```bash
-sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adwaita-1
+sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-cairo python3-gi-cairo
 pip install requests
 git clone <repo-url> todoist-pomodoro && cd todoist-pomodoro
 echo 'TODOIST_API_TOKEN=<your-token>' > .env
@@ -50,17 +51,18 @@ Tests: `python3 -m pytest tests/ -q`.
 (`config`, `todoist`, `sync`, `sessions`, `actions` — keep them in sync with
 `sh android/sync_backend.sh` after backend changes).
 
-Build it yourself:
+Build it yourself (full toolchain, caches, and signing notes: `MACHINE_SETUP.md`):
 
 ```bash
 pip install buildozer
 cd android
 export JAVA_HOME=<jdk-17-path>
 buildozer android debug
-# → bin/pomodoro-0.1-debug.apk, sideload onto the phone
+# → bin/pomodoro-<version>-arm64-v8a-debug.apk, sideload onto the phone
 ```
 
 On first launch, paste the Todoist token when asked. arm64, targets API 34.
+Tap a task to open the timer; press-and-hold a task for the task menu (same as ···).
 
 ## Layout
 
@@ -69,6 +71,7 @@ On first launch, paste the Todoist token when asked. arm64, targets API 34.
 | `main.py` | Desktop entry: Today → Timer wiring, banner + Undo, shortcuts |
 | `ui_today.py`, `ui_palette.py`, `ui_timer.py` | Task list, Ctrl+P palette, countdown view |
 | `ui_stats.py`, `ui_settings.py`, `ui_common.py` | Stats, durations dialog, shared dialogs |
+| `ui_theme.py` | Dark-theme module (colors, panel styling) |
 | `todoist.py` | Todoist API v1 client (quick-add, close, reopen, reschedule) |
 | `sync.py` | SyncStore + FilterStore, offline pending-add queue |
 | `sessions.py` | Session log, stats rollups, streak |
