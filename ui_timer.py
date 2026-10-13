@@ -103,10 +103,10 @@ def play_end_sound() -> None:
 
 
 _NIGHT_STOPS = (
-    (0.00, (0.02, 0.03, 0.10)),
-    (0.45, (0.07, 0.08, 0.22)),
-    (0.60, (0.11, 0.10, 0.25)),
-    (0.66, (0.035, 0.035, 0.09)),
+    (0.00, (0.015, 0.02, 0.08)),
+    (0.45, (0.05, 0.06, 0.17)),
+    (0.60, (0.08, 0.08, 0.20)),
+    (0.66, (0.03, 0.03, 0.08)),
     (1.00, (0.01, 0.01, 0.03)),
 )
 
@@ -158,7 +158,7 @@ class FocusNightBackdrop(Gtk.DrawingArea):
             rng = random.Random(11)
             tints = ((1, 1, 1), (1, 1, 1), (1, 1, 1),
                      (1.0, 0.88, 0.72), (0.72, 0.84, 1.0))
-            for _ in range(260):
+            for _ in range(110):
                 tint = tints[int(rng.random() * len(tints))]
                 ctx.set_source_rgba(tint[0], tint[1], tint[2],
                                     0.25 + rng.random() * 0.7)
@@ -167,7 +167,7 @@ class FocusNightBackdrop(Gtk.DrawingArea):
                               s, s)
                 ctx.fill()
             # Milky Way: faint diagonal drift of small dots.
-            for _ in range(130):
+            for _ in range(70):
                 t = rng.random()
                 mx = t * w * 0.95
                 my = h * (0.05 + t * 0.48) + rng.gauss(0, 1) * h * 0.035
@@ -195,9 +195,9 @@ class FocusNightBackdrop(Gtk.DrawingArea):
             ctx.fill()
             horizon = h * 0.66
             for (fx, fy, fw, fh, tint, alpha) in (
-                    (0.02, 0.10, 0.65, 0.30, (0.36, 0.26, 0.58), 0.10),
-                    (0.45, 0.22, 0.60, 0.26, (0.20, 0.45, 0.55), 0.08),
-                    (0.20, 0.06, 0.55, 0.20, (0.50, 0.30, 0.52), 0.07)):
+                    (0.02, 0.10, 0.65, 0.30, (0.36, 0.26, 0.58), 0.07),
+                    (0.45, 0.22, 0.60, 0.26, (0.20, 0.45, 0.55), 0.06),
+                    (0.20, 0.06, 0.55, 0.20, (0.50, 0.30, 0.52), 0.05)):
                 ctx.set_source_rgba(tint[0], tint[1], tint[2], alpha)
                 ctx.rectangle(w * fx, h * fy, w * fw, h * fh)
                 ctx.fill()

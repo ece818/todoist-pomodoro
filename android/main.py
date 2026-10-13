@@ -123,7 +123,7 @@ def compute_ui(w, h):
         "add_btn_w": max(110.0, w * 0.11),
         "banner_h": banner_h,
         "card_h": max(112.0, h * 0.085),
-        "zone_h": max(200.0, min(h * 0.64, h - 700.0)),
+        "zone_h": max(200.0, min(h * 0.56, h - 760.0)),
         "pill_h": max(96.0, h * 0.072),
         "pill_font": max(32.0, h * 0.016),
         "check_d": max(56.0, h * 0.032),
@@ -132,9 +132,11 @@ def compute_ui(w, h):
         "timer_back_font": max(26.0, h * 0.014),
         "timer_task_font": min(max(32.0, w * 0.075), 44.0),
         "clock_font": clock_font,
-        "timer_state_font": max(24.0, h * 0.013),
+        "timer_state_font": max(30.0, h * 0.016),
         "timer_mode_font": max(26.0, h * 0.013),
-        "timer_prog_font": max(22.0, h * 0.011),
+        "timer_prog_font": max(30.0, h * 0.016),
+        "timer_prog_h": max(42.0, h * 0.022),
+        "timer_state_h": max(42.0, h * 0.022),
         "timer_btn_h": timer_btn_h,
         # Width-capped: measured bold "Break" ≈ 3.25em wide; keep 16px
         # padding inside each of the 4 row buttons (row = w - 40 pad - 30 gaps).
@@ -755,10 +757,10 @@ class TodayScreen(Screen):
 
 # -- focus-todo night theme (procedural backdrop, no image assets) ---------
 _NIGHT_STOPS = (
-    (0.00, (0.02, 0.03, 0.10, 1)),
-    (0.45, (0.07, 0.08, 0.22, 1)),
-    (0.60, (0.11, 0.10, 0.25, 1)),
-    (0.66, (0.035, 0.035, 0.09, 1)),
+    (0.00, (0.015, 0.02, 0.08, 1)),
+    (0.45, (0.05, 0.06, 0.17, 1)),
+    (0.60, (0.08, 0.08, 0.20, 1)),
+    (0.66, (0.03, 0.03, 0.08, 1)),
     (1.00, (0.01, 0.01, 0.03, 1)),
 )
 _CARD_BG = (0.10, 0.10, 0.15, 0.94)
@@ -789,7 +791,7 @@ class NightBackdrop(Widget):
     """
 
     BANDS = 28
-    STARS = 260
+    STARS = 110
     STAR_TINTS = ((1, 1, 1), (1, 1, 1), (1, 1, 1),
                   (1.0, 0.88, 0.72), (0.72, 0.84, 1.0))
 
@@ -827,7 +829,7 @@ class NightBackdrop(Widget):
                            round(1 + rng.random() * 2.0, 1))
                     buckets.setdefault(key, []).extend([sx, sy])
                 # Milky Way: faint diagonal drift of small dots.
-                for _ in range(130):
+                for _ in range(70):
                     t = rng.random()
                     mx = x + t * w * 0.95
                     my = (y + h * (0.95 - t * 0.48)
@@ -858,9 +860,9 @@ class NightBackdrop(Widget):
                 # Nebula glows: soft color fields that set this sky apart
                 # from a plain mountain-lake photo.
                 for (fx, fy, fw, fh, tint, alpha) in (
-                        (0.02, 0.62, 0.65, 0.30, (0.36, 0.26, 0.58), 0.10),
-                        (0.45, 0.52, 0.60, 0.26, (0.20, 0.45, 0.55), 0.08),
-                        (0.20, 0.74, 0.55, 0.20, (0.50, 0.30, 0.52), 0.07)):
+                        (0.02, 0.62, 0.65, 0.30, (0.36, 0.26, 0.58), 0.07),
+                        (0.45, 0.52, 0.60, 0.26, (0.20, 0.45, 0.55), 0.06),
+                        (0.20, 0.74, 0.55, 0.20, (0.50, 0.30, 0.52), 0.05)):
                     Color(tint[0], tint[1], tint[2], alpha)
                     Ellipse(pos=(x + w * fx, y + h * fy),
                             size=(w * fw, h * fh))
@@ -914,13 +916,15 @@ class TickRing(Widget):
                 return
             self.canvas.clear()
             cx, cy = float(self.x) + w / 2, float(self.y) + h / 2
-            radius = min(w, h) / 2 - 12
+            radius = min(w, h) / 2 - 56
             if radius <= 0:
                 return
             done = min(1.0, max(0.0, float(self.progress)))
             with self.canvas:
                 for i in range(self.ticks):
-                    ang = -math.pi / 2 + 2 * math.pi * i / self.ticks
+                    # 12 o'clock start, clockwise: y-up coords need a
+                    # decreasing angle from +90 degrees.
+                    ang = math.pi / 2 - 2 * math.pi * i / self.ticks
                     if (i / self.ticks) < done:
                         Color(1, 1, 1, 0.92)
                     else:
@@ -1021,15 +1025,16 @@ class TimerScreen(Screen):
         self._clock.bind(size=self._clock.setter("text_size"))
         zone.add_widget(self._clock)
         content.add_widget(zone)
+        content.add_widget(Widget(size_hint_y=None, height=16))
         self._progress = Label(
-            text="", font_size=_U.get("timer_prog_font", 22),
-            color=(1, 1, 1, 0.55), halign="center",
-            size_hint_y=None, height=30)
+            text="", font_size=_U.get("timer_prog_font", 30),
+            color=(1, 1, 1, 0.75), halign="center",
+            size_hint_y=None, height=_U.get("timer_prog_h", 42))
         content.add_widget(self._progress)
         self._state = Label(
-            text="Ready", font_size=_U.get("timer_state_font", 24),
-            color=(1, 1, 1, 0.65), halign="center",
-            size_hint_y=None, height=30)
+            text="Ready", font_size=_U.get("timer_state_font", 30),
+            color=(1, 1, 1, 0.8), halign="center",
+            size_hint_y=None, height=_U.get("timer_state_h", 42))
         content.add_widget(self._state)
         pill_wrap = AnchorLayout(anchor_x="center", anchor_y="center",
                                 size_hint_y=None,
@@ -1105,8 +1110,10 @@ class TimerScreen(Screen):
             self._task_stats.font_size = _U.get("timer_prog_font", 22)
             self._zone.height = _U.get("zone_h", 900)
             self._clock.font_size = _U.get("clock_font", 170)
-            self._progress.font_size = _U.get("timer_prog_font", 22)
-            self._state.font_size = _U.get("timer_state_font", 24)
+            self._progress.font_size = _U.get("timer_prog_font", 30)
+            self._progress.height = _U.get("timer_prog_h", 42)
+            self._state.font_size = _U.get("timer_state_font", 30)
+            self._state.height = _U.get("timer_state_h", 42)
             self._pill.font_size = _U.get("pill_font", 32)
             self._pill.height = _U.get("pill_h", 96)
             self._reset_link.font_size = _U.get("ghost_font", 26)
@@ -1125,8 +1132,9 @@ class TimerScreen(Screen):
             zone = _U.get("zone_h", 900)
             pill = _U.get("pill_h", 96)
             nav = _U.get("nav_h", 72) + 8
-            below = 30 + 30 + pill + 56 + nav
-            chrome = 20 + 54  # vertical padding + 9 gaps of spacing 6
+            below = (_U.get("timer_prog_h", 42)
+                     + _U.get("timer_state_h", 42) + pill + 56 + nav)
+            chrome = 20 + 60 + 16  # padding + 10 gaps of 6 + ring gap
             top_gap = 0.5 * h - zone / 2 - card
             bottom_gap = h - chrome - (card + top_gap + zone + below)
             if bottom_gap < 0:
