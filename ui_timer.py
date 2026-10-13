@@ -497,6 +497,10 @@ class TimerView(Gtk.Box):
         card.append(card_close)
         page.append(card)
 
+        top_spacer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        top_spacer.set_vexpand(True)
+        page.append(top_spacer)
+
         center = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         center.set_vexpand(False)
         center.set_valign(Gtk.Align.START)

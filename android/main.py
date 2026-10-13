@@ -1007,6 +1007,8 @@ class TimerScreen(Screen):
                                                  "today"))
         card.add_widget(close)
         content.add_widget(card)
+        self._top_spacer = Widget(size_hint_y=1)
+        content.add_widget(self._top_spacer)
         zone = FloatLayout(size_hint_y=None, height=_U.get("zone_h", 900))
         self._zone = zone
         self._ring = TickRing()
@@ -1058,7 +1060,8 @@ class TimerScreen(Screen):
         content.add_widget(sec)
         self.banner = StatusBanner()
         content.add_widget(self.banner)
-        content.add_widget(Widget(size_hint_y=1))
+        self._bottom_spacer = Widget(size_hint_y=1)
+        content.add_widget(self._bottom_spacer)
         nav = BoxLayout(orientation="horizontal", size_hint_y=None,
                         height=_U.get("nav_h", 72) + 8, spacing=4)
         self._nav_btns: dict = {}
@@ -1104,6 +1107,22 @@ class TimerScreen(Screen):
             self._done_link.font_size = _U.get("ghost_font", 26)
             for b in self._nav_btns.values():
                 b.font_size = _U.get("nav_font", 30)
+        except Exception:
+            pass
+        # Center the clock: top gap puts the ring middle at 50% height,
+        # bottom spacer takes whatever is left (clamped at zero).
+        try:
+            h = float(Window.height or 0)
+            card = _U.get("card_h", 112)
+            zone = _U.get("zone_h", 900)
+            pill = _U.get("pill_h", 96)
+            nav = _U.get("nav_h", 72) + 8
+            fixed = card + zone + 30 + 30 + pill + 56 + nav + 62
+            top_gap = 0.5 * h - zone / 2 - card
+            top_gap = max(0.0, top_gap)
+            bottom_gap = max(0.0, h - fixed - top_gap)
+            self._top_spacer.size_hint_y = top_gap
+            self._bottom_spacer.size_hint_y = bottom_gap
         except Exception:
             pass
 
