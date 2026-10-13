@@ -194,7 +194,7 @@ _CARD = (0.19, 0.19, 0.27, 1)
 _BG = (0.07, 0.07, 0.11, 1)
 _BTN = (0.27, 0.28, 0.35, 1)
 _DARK_TEXT = (0.07, 0.07, 0.11, 1)
-_APP_VERSION = "0.25"
+_APP_VERSION = "0.26"
 
 
 def _paint_bg(widget, color, radius=0):
