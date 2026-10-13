@@ -163,12 +163,37 @@ class FocusNightBackdrop(Gtk.DrawingArea):
                 ctx.rectangle(0, h * i / bands, w, h / bands + 1)
                 ctx.fill()
             rng = random.Random(11)
-            for _ in range(150):
-                ctx.set_source_rgba(1, 1, 1, 0.2 + rng.random() * 0.65)
-                s = 1 + rng.random() * 1.6
-                ctx.rectangle(rng.random() * w, h * (0.02 + rng.random() * 0.54),
+            tints = ((1, 1, 1), (1, 1, 1), (1, 1, 1),
+                     (1.0, 0.88, 0.72), (0.72, 0.84, 1.0))
+            for _ in range(260):
+                tint = tints[int(rng.random() * len(tints))]
+                ctx.set_source_rgba(tint[0], tint[1], tint[2],
+                                    0.25 + rng.random() * 0.7)
+                s = 1 + rng.random() * 2.0
+                ctx.rectangle(rng.random() * w, h * (0.01 + rng.random() * 0.55),
                               s, s)
                 ctx.fill()
+            # Milky Way: faint diagonal drift of small dots.
+            for _ in range(130):
+                t = rng.random()
+                mx = t * w * 0.95
+                my = h * (0.05 + t * 0.48) + rng.gauss(0, 1) * h * 0.035
+                if my > h * 0.58:
+                    continue
+                ctx.set_source_rgba(0.8, 0.85, 1.0,
+                                    0.05 + rng.random() * 0.15)
+                s = 1 + rng.random()
+                ctx.rectangle(mx, my, s, s)
+                ctx.fill()
+            # Shooting star with a fading tail.
+            hx, hy = w * 0.70, h * 0.14
+            tx, ty = w * 0.56, h * 0.21
+            for frac, alpha in ((1.0, 0.9), (0.6, 0.45), (0.3, 0.2)):
+                ctx.set_source_rgba(1, 1, 1, alpha)
+                ctx.set_line_width(2.5)
+                ctx.move_to(hx, hy)
+                ctx.line_to(hx + (tx - hx) * frac, hy + (ty - hy) * frac)
+                ctx.stroke()
             ctx.set_source_rgba(0.90, 0.92, 1, 0.10)
             ctx.arc(w * 0.78, h * 0.30, 60, 0, 2 * math.pi)
             ctx.fill()

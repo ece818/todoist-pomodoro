@@ -229,11 +229,12 @@ def _dark_entry(hint, font_size, radius=14, **kwargs):
     return t
 
 
-def _paste_into(entry, status=None) -> bool:
+def _paste_into(entry, status=None, action="Connect") -> bool:
     """Fill a TextInput from the system clipboard; True when pasted.
 
     Long-press/Gboard paste is unreliable in Kivy's SDL text input
     (worse on password fields), so token fields get a real button.
+    The field is password-masked, so confirm via the status line.
     """
     try:
         from kivy.core.clipboard import Clipboard
@@ -247,7 +248,8 @@ def _paste_into(entry, status=None) -> bool:
             return False
         if status is not None:
             try:
-                status.text = ""
+                status.text = (f"Pasted {len(text)} characters — "
+                               f"tap {action}.")
             except Exception:
                 pass
         return True
@@ -785,7 +787,9 @@ class NightBackdrop(Widget):
     """
 
     BANDS = 28
-    STARS = 150
+    STARS = 260
+    STAR_TINTS = ((1, 1, 1), (1, 1, 1), (1, 1, 1),
+                  (1.0, 0.88, 0.72), (0.72, 0.84, 1.0))
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -814,12 +818,35 @@ class NightBackdrop(Widget):
                 for _ in range(self.STARS):
                     sx = x + rng.random() * w
                     sy = y + h * (0.44 + rng.random() * 0.54)
-                    key = (round(0.2 + rng.random() * 0.65, 1),
-                           round(1 + rng.random() * 1.6, 1))
+                    tint = self.STAR_TINTS[int(rng.random()
+                                               * len(self.STAR_TINTS))]
+                    key = (tint,
+                           round(0.25 + rng.random() * 0.7, 1),
+                           round(1 + rng.random() * 2.0, 1))
                     buckets.setdefault(key, []).extend([sx, sy])
-                for (alpha, size), pts in buckets.items():
-                    Color(1, 1, 1, alpha)
+                # Milky Way: faint diagonal drift of small dots.
+                for _ in range(130):
+                    t = rng.random()
+                    mx = x + t * w * 0.95
+                    my = (y + h * (0.95 - t * 0.48)
+                          + rng.gauss(0, 1) * h * 0.035)
+                    if my < y + h * 0.42:
+                        continue
+                    key = ((0.8, 0.85, 1.0),
+                           round(0.05 + rng.random() * 0.15, 2),
+                           round(1 + rng.random(), 1))
+                    buckets.setdefault(key, []).extend([mx, my])
+                for (tint, alpha, size), pts in buckets.items():
+                    Color(tint[0], tint[1], tint[2], alpha)
                     Point(points=pts, pointsize=size)
+                # Shooting star with a fading tail.
+                hx, hy = x + w * 0.70, y + h * 0.86
+                tx, ty = x + w * 0.56, y + h * 0.79
+                for frac, alpha in ((1.0, 0.9), (0.6, 0.45), (0.3, 0.2)):
+                    Color(1, 1, 1, alpha)
+                    Line(points=[hx, hy,
+                                 hx + (tx - hx) * frac,
+                                 hy + (ty - hy) * frac], width=2.5)
                 Color(0.90, 0.92, 1, 0.10)
                 Ellipse(pos=(x + w * 0.78 - 60, y + h * 0.70 - 60),
                         size=(120, 120))
@@ -954,8 +981,8 @@ class TimerScreen(Screen):
         self._pill_key = ""
         root = FloatLayout()
         root.add_widget(NightBackdrop())
-        content = BoxLayout(orientation="vertical", padding=(20, 14),
-                            spacing=8)
+        content = BoxLayout(orientation="vertical", padding=(20, 10),
+                            spacing=6)
         card = BoxLayout(orientation="horizontal", size_hint_y=None,
                          height=_U.get("card_h", 112), spacing=12,
                          padding=(16, 10))
@@ -984,8 +1011,8 @@ class TimerScreen(Screen):
                                                  "today"))
         card.add_widget(close)
         content.add_widget(card)
-        content.add_widget(Widget(size_hint_y=0.10))
-        zone = FloatLayout(size_hint_y=1.35)
+        content.add_widget(Widget(size_hint_y=0.03))
+        zone = FloatLayout(size_hint_y=1.0)
         self._ring = TickRing()
         zone.add_widget(self._ring)
         self._clock = Label(
@@ -1422,7 +1449,8 @@ class SettingsScreen(Screen):
                                  bg=_ACCENT, fg=_DARK_TEXT,
                                  size_hint_x=None, width=180)
         paste_btn.bind(on_release=lambda _b: _paste_into(self._token,
-                                                         self._status))
+                                                         self._status,
+                                                         "Save"))
         token_row.add_widget(paste_btn)
         root.add_widget(token_row)
         self._status = Label(text="", color=_DIM,
