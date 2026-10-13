@@ -51,6 +51,12 @@ def show_reschedule_dialog(parent, on_apply) -> None:
     dlg.set_modal(True)
     dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
     dlg.add_button("Save", Gtk.ResponseType.APPLY)
+    try:
+        save_btn = dlg.get_widget_for_response(Gtk.ResponseType.APPLY)
+        if save_btn is not None:
+            save_btn.add_css_class("suggested-action")
+    except Exception:
+        pass
     dlg.set_default_response(Gtk.ResponseType.APPLY)
     dlg.set_default_size(360, -1)
     try:

@@ -14,6 +14,7 @@ FOCUS_CSS: bytes = b"""
 .focus-row:selected { background-color: rgba(60,70,110,0.95); }
 .focus-row-label { font-size: 18px; font-weight: 700; color: #ffffff; }
 .focus-meta { font-size: 14px; color: rgba(255,255,255,0.6); }
+.focus-meta.error { color: #ff7b72; }
 .focus-value { font-size: 17px; font-weight: 700; color: #8ab4f8; }
 .focus-entry { font-size: 16px; padding: 10px 14px; border-radius: 12px; }
 .focus-hero { font-size: 42px; font-weight: 800; }

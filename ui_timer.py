@@ -475,13 +475,20 @@ class TimerView(Gtk.Box):
         card.set_margin_bottom(10)
         card.set_margin_start(14)
         card.set_margin_end(14)
-        check = Gtk.Button(label="")
-        check.add_css_class("focus-check")
-        check.set_tooltip_text("Complete this task in Todoist")
-        check.set_valign(Gtk.Align.CENTER)
-        check.set_size_request(46, 46)
-        check.connect("clicked", self._on_mark_done_clicked)
-        card.append(check)
+        check_area = Gtk.DrawingArea()
+        check_area.set_size_request(46, 46)
+        check_area.set_valign(Gtk.Align.CENTER)
+        check_area.set_tooltip_text("Complete this task in Todoist")
+        check_area.set_draw_func(self._draw_check_button, None)
+        try:
+            check_area.set_cursor_from_name("pointer")
+        except Exception:
+            pass
+        check_click = Gtk.GestureClick.new()
+        check_click.connect(
+            "pressed", lambda *_a: self._on_mark_done_clicked(check_area))
+        check_area.add_controller(check_click)
+        card.append(check_area)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         title_box.set_hexpand(True)
         title_box.set_valign(Gtk.Align.CENTER)
@@ -656,6 +663,19 @@ class TimerView(Gtk.Box):
             return
         try:
             self._on_navigate(target)
+        except Exception:
+            pass
+
+    def _draw_check_button(self, _area, ctx, w: int, h: int, _data) -> None:
+        """Ring drawn inscribed, so any allocation stays circular."""
+        try:
+            radius = min(w, h) / 2 - 3
+            if radius <= 0:
+                return
+            ctx.set_source_rgba(0.72, 0.74, 0.84, 1)
+            ctx.set_line_width(3)
+            ctx.arc(w / 2, h / 2, radius, 0, 2 * math.pi)
+            ctx.stroke()
         except Exception:
             pass
 
