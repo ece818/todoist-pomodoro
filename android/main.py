@@ -25,7 +25,6 @@ from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.checkbox import CheckBox
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
@@ -36,6 +35,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
+from kivy.utils import platform as _platform
 
 from actions import TaskActions
 from config import TimerSettings, load_timer_settings, save_timer_settings
@@ -83,53 +83,53 @@ def compute_ui(w, h):
     w = max(320.0, float(w or 0))
     h = max(480.0, float(h or 0))
     row_h = max(104.0, h / 9.0)
-    name_font = max(26.0, row_h * 0.19)
+    name_font = max(30.0, row_h * 0.20)
     top_h = max(64.0, h * 0.036)
-    nav_h = max(64.0, h * 0.036)
+    nav_h = max(72.0, h * 0.04)
     add_h = max(68.0, h * 0.045)
-    banner_h = max(56.0, h * 0.032)
+    banner_h = max(64.0, h * 0.036)
     # Timer: width-driven so a tall/narrow phone still gets a big clock
     # even when height is reduced by system bars at measure time.
     timer_btn_h = max(88.0, h * 0.068)
     clock_font = min(max(h * 0.13, w * 0.24), w * 0.29)
     clock_font = max(min(132.0, w * 0.29), clock_font)
     status_font = max(34.0, h * 0.02)
-    popup_btn_h = max(64.0, h * 0.045)
+    popup_btn_h = max(92.0, h * 0.062)
     return {
         "row_h": row_h,
-        "check_w": max(64.0, row_h * 0.48),
-        "menu_w": max(64.0, row_h * 0.5),
-        "menu_font": max(28.0, row_h * 0.19),
+        "check_w": max(104.0, row_h * 0.55),
+        "menu_w": max(116.0, row_h * 0.55),
+        "menu_font": max(34.0, row_h * 0.22),
         "name_font": name_font,
-        "meta_font": max(20.0, row_h * 0.115),
+        "meta_font": max(24.0, row_h * 0.125),
         "trunc": max(24, int(w * 0.68 / max(10.0, name_font * 0.55))),
         "meta_trunc": max(40, int(w * 0.80 / max(12.0, max(20.0, row_h * 0.115) * 0.55))),
         "top_h": top_h,
-        "title_font": max(28.0, top_h * 0.44),
-        "title_w": max(96.0, w * 0.11),
+        "title_font": max(32.0, top_h * 0.46),
+        "title_w": max(120.0, w * 0.13),
         "refresh_w": max(110.0, w * 0.13),
-        "btn_font": min(max(28.0, top_h * 0.34), w * 0.06),
-        "filter_font": max(28.0, top_h * 0.34),
+        "btn_font": min(max(34.0, top_h * 0.40), w * 0.065),
+        "filter_font": max(32.0, top_h * 0.40),
         "nav_h": nav_h,
-        "nav_font": min(max(34.0, nav_h * 0.44), w * 0.06),
+        "nav_font": min(max(38.0, nav_h * 0.48), w * 0.065),
         "status_font": status_font,
         "status_h": max(56.0, status_font + 10),
-        "banner_font": max(30.0, h * 0.012),
+        "banner_font": max(32.0, h * 0.014),
         "stat_hero": min(max(64.0, h * 0.028), ((w - 52) / 3 - 24) / 4.5),
-        "stat_cap": max(28.0, h * 0.011),
-        "stat_row": max(120.0, h * 0.045),
+        "stat_cap": max(30.0, h * 0.012),
+        "stat_row": max(132.0, h * 0.05),
         "add_h": add_h,
-        "add_font": max(24.0, add_h * 0.30),
+        "add_font": max(30.0, add_h * 0.34),
         "add_btn_w": max(110.0, w * 0.11),
-        "banner_h": banner_h,
+        "banner_h": max(64.0, h * 0.036),
         "card_h": max(112.0, h * 0.085),
         "zone_h": max(200.0, min(h * 0.56, h - 760.0)),
         "pill_h": max(96.0, h * 0.072),
         "pill_font": max(32.0, h * 0.016),
-        "check_d": max(56.0, h * 0.032),
-        "ghost_font": max(26.0, h * 0.013),
-        "timer_back_h": max(64.0, h * 0.045),
-        "timer_back_font": max(26.0, h * 0.014),
+        "check_d": max(80.0, h * 0.04),
+        "ghost_font": max(32.0, h * 0.0155),
+        "timer_back_h": max(84.0, h * 0.052),
+        "timer_back_font": max(32.0, h * 0.0155),
         "timer_task_font": min(max(32.0, w * 0.075), 44.0),
         "clock_font": clock_font,
         "timer_state_font": max(30.0, h * 0.016),
@@ -143,15 +143,15 @@ def compute_ui(w, h):
         "timer_btn_font": min(max(26.0, timer_btn_h * 0.32),
                               ((w - 70) / 4 - 16) / 3.25),
         "setup_title": min(max(40.0, h * 0.024), 76.0),
-        "setup_entry_h": max(64.0, h * 0.04),
+        "setup_entry_h": max(80.0, h * 0.048),
         "setup_entry_font": max(34.0, h * 0.013),
-        "setup_btn_h": max(72.0, h * 0.055),
+        "setup_btn_h": max(88.0, h * 0.06),
         "setup_btn_font": max(34.0, h * 0.013),
         "stats_body": max(34.0, h * 0.013),
-        "popup_menu_h": h * 0.30,
+        "popup_menu_h": h * 0.42,
         "popup_btn_h": popup_btn_h,
-        "popup_btn_font": max(30.0, h * 0.012),
-        "popup_date_h": h * 0.22,
+        "popup_btn_font": max(34.0, h * 0.0145),
+        "popup_date_h": h * 0.26,
     }
 
 
@@ -169,6 +169,42 @@ def init_ui():
         w, h = 0, 0
     _U.clear()
     _U.update(compute_ui(w, h))
+
+
+def decide_back(current, history, popup_open, home, allow_setup, now,
+                last_prompt, window=2.0):
+    """Pure system-back policy.
+
+    Returns (action, target, new_last_prompt) where action is one of:
+    "dismiss-popup", "go", "prompt-exit", "exit".
+    """
+    if popup_open:
+        return ("dismiss-popup", None, last_prompt)
+    target = None
+    for name in reversed(history):
+        if name == current:
+            continue
+        if name == "setup" and not allow_setup:
+            continue
+        target = name
+        break
+    if target is not None and target != home:
+        return ("go", target, last_prompt)
+    if current != home:
+        return ("go", home, last_prompt)
+    if last_prompt is not None and (now - last_prompt) < window:
+        return ("exit", None, last_prompt)
+    return ("prompt-exit", None, now)
+
+
+def pop_target(history, target):
+    """History after a back-press navigation (drops target and above)."""
+    hist = list(history)
+    while hist and hist[-1] != target:
+        hist.pop()
+    if hist:
+        hist.pop()
+    return hist
 
 
 def _left_aligned(text, props):
@@ -479,7 +515,9 @@ class SetupScreen(Screen):
             text="Paste your Todoist personal API token.\nTodoist > Settings > Integrations > Developer.",
             color=_DIM,
             font_size=_U.get("setup_entry_font", 34),
-            halign="center"))
+            halign="center",
+            size_hint_y=None,
+            height=_U.get("setup_entry_font", 34) * 4.2))
         token_row = BoxLayout(orientation="horizontal", spacing=10,
                                 size_hint_y=None,
                                 height=_U.get("setup_entry_h", 64))
@@ -494,7 +532,8 @@ class SetupScreen(Screen):
                                                          self._status))
         token_row.add_widget(paste_btn)
         box.add_widget(token_row)
-        self._status = Label(text="", halign="center", color=_DIM)
+        self._status = Label(text="", halign="center", color=_DIM,
+                             size_hint_y=None, height=60)
         box.add_widget(self._status)
         box.add_widget(Widget(size_hint_y=1))
         go = _flat_button("Connect", _U.get("setup_btn_font", 34),
@@ -552,9 +591,8 @@ class TaskRow(ButtonBehavior, BoxLayout):
                          **kwargs)
         _paint_bg(self, _CARD, radius=18)
         self.task = task
-        check = CheckBox(size_hint_x=None, width=_U.get("check_w", 72),
-                         color=_ACCENT)
-        check.bind(active=self._on_check)
+        check = CircleCheck(diameter=_U.get("check_d", 80))
+        check.bind(on_release=lambda *_a: self._complete())
         self.add_widget(check)
         mid = BoxLayout(orientation="vertical", spacing=2)
         mid.add_widget(_left_aligned(
@@ -578,9 +616,8 @@ class TaskRow(ButtonBehavior, BoxLayout):
     def on_release(self):
         App.get_running_app().open_timer(self.task)
 
-    def _on_check(self, _box, active):
-        if active:
-            App.get_running_app().complete_task(self.task)
+    def _complete(self):
+        App.get_running_app().complete_task(self.task)
 
 
 class TodayScreen(Screen):
@@ -609,7 +646,7 @@ class TodayScreen(Screen):
         root.add_widget(top)
 
         nav = BoxLayout(orientation="horizontal", size_hint_y=None,
-                        height=_U.get("nav_h", 72), spacing=10)
+                        height=_U.get("nav_h", 72) + 16, spacing=10)
         self._nav_buttons: list = []
         for label, screen in (("Timer", "timer"), ("Stats", "stats"), ("Settings", "settings")):
             b = _flat_button(label, _U.get("nav_font", 30), fg=_ACCENT)
@@ -1007,7 +1044,7 @@ class TimerScreen(Screen):
         card.add_widget(mid)
         close = Button(
             text="X", font_size=_U.get("timer_back_font", 26), bold=True,
-            size_hint_x=None, width=64, background_normal="",
+            size_hint_x=None, width=116, background_normal="",
             background_down="", background_color=(0, 0, 0, 0), color=_DIM)
         close.bind(on_release=lambda _b: setattr(self.manager, "current",
                                                  "today"))
@@ -1047,18 +1084,18 @@ class TimerScreen(Screen):
         pill_wrap.add_widget(self._pill)
         content.add_widget(pill_wrap)
         sec = BoxLayout(orientation="horizontal", size_hint_y=None,
-                        height=56, spacing=0)
+                        height=88, spacing=0)
         sec.add_widget(Widget())
         self._reset_link = Button(
             text="Reset", font_size=_U.get("ghost_font", 26),
-            size_hint_x=None, width=180, background_normal="",
+            size_hint_x=None, width=230, background_normal="",
             background_down="", background_color=(0, 0, 0, 0),
             color=_DIM)
         self._reset_link.bind(on_release=lambda _b: self._reset())
         sec.add_widget(self._reset_link)
         self._done_link = Button(
             text="Task done", font_size=_U.get("ghost_font", 26),
-            size_hint_x=None, width=220, background_normal="",
+            size_hint_x=None, width=280, background_normal="",
             background_down="", background_color=(0, 0, 0, 0),
             color=self._GREEN)
         self._done_link.bind(on_release=lambda _b: self._mark_done())
@@ -1070,7 +1107,7 @@ class TimerScreen(Screen):
         self._bottom_spacer = Widget(size_hint_y=None, height=0)
         content.add_widget(self._bottom_spacer)
         nav = BoxLayout(orientation="horizontal", size_hint_y=None,
-                        height=_U.get("nav_h", 72) + 8, spacing=4)
+                        height=_U.get("nav_h", 72) + 16, spacing=4)
         self._nav_btns: dict = {}
         for label, screen in (("Today", "today"), ("Timer", "timer"),
                               ("Stats", "stats"), ("Settings", "settings")):
@@ -1131,9 +1168,9 @@ class TimerScreen(Screen):
             card = _U.get("card_h", 112)
             zone = _U.get("zone_h", 900)
             pill = _U.get("pill_h", 96)
-            nav = _U.get("nav_h", 72) + 8
+            nav = _U.get("nav_h", 72) + 16
             below = (_U.get("timer_prog_h", 42)
-                     + _U.get("timer_state_h", 42) + pill + 56 + nav)
+                     + _U.get("timer_state_h", 42) + pill + 88 + nav)
             chrome = 20 + 60 + 16  # padding + 10 gaps of 6 + ring gap
             top_gap = 0.5 * h - zone / 2 - card
             bottom_gap = h - chrome - (card + top_gap + zone + below)
@@ -1490,7 +1527,8 @@ class SettingsScreen(Screen):
         token_row.add_widget(paste_btn)
         root.add_widget(token_row)
         self._status = Label(text="", color=_DIM,
-                             font_size=_U.get("setup_entry_font", 34))
+                             font_size=_U.get("setup_entry_font", 34),
+                             size_hint_y=None, height=60)
         root.add_widget(self._status)
         root.add_widget(Widget(size_hint_y=1))
         save = _flat_button("Save", _U.get("setup_btn_font", 34),
@@ -1557,6 +1595,10 @@ class SettingsScreen(Screen):
                             size_hint_y=None, height=_U.get("setup_btn_h", 156))
         done.bind(on_release=lambda _b: (popup.dismiss(), on_pick(state["v"])))
         layout.add_widget(done)
+        try:
+            App.get_running_app()._track_popup(popup)
+        except Exception:
+            pass
         popup.open()
 
     def _save(self):
@@ -1593,6 +1635,18 @@ class PomodoroApp(App):
         self.sm.add_widget(self.timer)
         self.sm.add_widget(StatsScreen())
         self.sm.add_widget(SettingsScreen())
+        self._history: list = []
+        self._popups: list = []
+        self._last_exit_prompt = None
+        self._navigating_back = False
+        self._toast_w = None
+        self._last_screen = self.sm.current
+        self.sm.bind(current=self._record_nav)
+        if _platform == "android":
+            try:
+                Window.bind(on_keyboard=self._on_android_key)
+            except Exception:
+                pass
         if self.token:
             self._connect(self.token, self._on_first_connect,
                           lambda msg: self.today.banner.show(msg, None, 5))
@@ -1603,6 +1657,101 @@ class PomodoroApp(App):
 
     def _go(self, screen):
         self.sm.current = screen
+
+    def _record_nav(self, _sm, new):
+        """Track screen history for the system back button."""
+        try:
+            back = self._navigating_back
+        except AttributeError:
+            back = False
+        self._navigating_back = False
+        old = self._last_screen
+        self._last_screen = new
+        if back or not old or old == new:
+            return
+        if old == "setup" and self.token:
+            return
+        if not self._history or self._history[-1] != old:
+            self._history = (self._history + [old])[-20:]
+
+    def _track_popup(self, popup):
+        self._popups.append(popup)
+        try:
+            popup.bind(on_dismiss=lambda *a, p=popup: self._untrack_popup(p))
+        except Exception:
+            pass
+
+    def _untrack_popup(self, popup):
+        try:
+            while popup in self._popups:
+                self._popups.remove(popup)
+        except Exception:
+            pass
+
+    def _toast(self, text):
+        """Small transient message above the bottom edge, any screen."""
+        try:
+            if self._toast_w is not None:
+                try:
+                    Window.remove_widget(self._toast_w)
+                except Exception:
+                    pass
+                self._toast_w = None
+            w = min(700.0, float(Window.width or 0) - 80)
+            label = Label(text=text, font_size=_U.get("btn_font", 28),
+                          color=_FG, halign="center", valign="middle",
+                          size_hint=(None, None), size=(w, 96))
+            label.bind(size=label.setter("text_size"))
+            label.pos = ((float(Window.width or 0) - w) / 2, 120)
+            _paint_bg(label, (0.10, 0.10, 0.15, 0.95), radius=24)
+            self._toast_w = label
+            Window.add_widget(label)
+            Clock.schedule_once(lambda _dt: self._hide_toast(label), 2.0)
+        except Exception:
+            pass
+
+    def _hide_toast(self, label):
+        try:
+            Window.remove_widget(label)
+        except Exception:
+            pass
+        finally:
+            if self._toast_w is label:
+                self._toast_w = None
+
+    def _on_android_key(self, _win, key, *_args):
+        """System back: dismiss popup, else history, else double-tap exit."""
+        if key != 27:
+            return False
+        try:
+            home = "setup" if not self.token else "today"
+            action, target, self._last_exit_prompt = decide_back(
+                self.sm.current, self._history, bool(self._popups), home,
+                not self.token, time.monotonic(), self._last_exit_prompt)
+        except Exception:
+            return False
+        try:
+            if action == "dismiss-popup":
+                if self._popups:
+                    self._popups.pop().dismiss()
+            elif action == "go":
+                self._navigating_back = True
+                self._history = pop_target(self._history, target)
+                self.sm.current = target
+            elif action == "prompt-exit":
+                self._toast("Press back again to exit")
+            elif action == "exit":
+                try:
+                    t = self.timer
+                    if (t._tick_ev is not None and t._mode == "focus"
+                            and t._worked_sec() >= 60):
+                        self.log_session(t._worked_sec(), finished=False)
+                except Exception:
+                    pass
+                self.stop()
+        except Exception:
+            pass
+        return True
 
     def _read_token(self):
         try:
@@ -1694,6 +1843,7 @@ class PomodoroApp(App):
         custom = _flat_button("Change date…", _U.get("popup_btn_font", 30), size_hint_y=None, height=_U.get("popup_btn_h", 68))
         custom.bind(on_release=lambda _b: (popup.dismiss(), self.open_custom_date(task)))
         layout.add_widget(custom)
+        self._track_popup(popup)
         popup.open()
 
     def open_custom_date(self, task):
@@ -1701,7 +1851,7 @@ class PomodoroApp(App):
         _paint_bg(layout, _BG)
         entry = _dark_entry("e.g. tomorrow, Mon 2pm",
                             _U.get("setup_entry_font", 34),
-                            size_hint_y=None, height=72)
+                            size_hint_y=None, height=92)
         layout.add_widget(entry)
         popup = Popup(title="Change date", title_size=28, title_color=_FG,
                       separator_color=_ACCENT, content=layout,
@@ -1712,6 +1862,7 @@ class PomodoroApp(App):
                           size_hint_y=None, height=_U.get("setup_btn_h", 72))
         go.bind(on_release=lambda _b: (popup.dismiss(), self.reschedule_task(task, entry.text.strip())))
         layout.add_widget(go)
+        self._track_popup(popup)
         popup.open()
 
     def complete_task(self, task):
