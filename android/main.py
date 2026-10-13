@@ -30,6 +30,7 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
+from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
@@ -129,7 +130,7 @@ def compute_ui(w, h):
         "ghost_font": max(26.0, h * 0.013),
         "timer_back_h": max(64.0, h * 0.045),
         "timer_back_font": max(26.0, h * 0.014),
-        "timer_task_font": min(max(32.0, w * 0.075), 64.0),
+        "timer_task_font": min(max(32.0, w * 0.075), 44.0),
         "clock_font": clock_font,
         "timer_state_font": max(24.0, h * 0.013),
         "timer_mode_font": max(26.0, h * 0.013),
@@ -191,6 +192,7 @@ _CARD = (0.19, 0.19, 0.27, 1)
 _BG = (0.07, 0.07, 0.11, 1)
 _BTN = (0.27, 0.28, 0.35, 1)
 _DARK_TEXT = (0.07, 0.07, 0.11, 1)
+_APP_VERSION = "0.25"
 
 
 def _paint_bg(widget, color, radius=0):
@@ -620,7 +622,7 @@ class TodayScreen(Screen):
                              color=_DIM, halign="left", valign="middle")
         self._status.bind(size=self._status.setter("text_size"))
         root.add_widget(self._status)
-        list_wrap = FloatLayout()
+        list_wrap = RelativeLayout()
         scroll = ScrollView(bar_width=8, bar_color=(0, 0, 0, 0),
                             bar_inactive_color=(0, 0, 0, 0),
                             scroll_type=["content"])
@@ -1007,9 +1009,9 @@ class TimerScreen(Screen):
                                                  "today"))
         card.add_widget(close)
         content.add_widget(card)
-        self._top_spacer = Widget(size_hint_y=1)
+        self._top_spacer = Widget(size_hint_y=None, height=0)
         content.add_widget(self._top_spacer)
-        zone = FloatLayout(size_hint_y=None, height=_U.get("zone_h", 900))
+        zone = RelativeLayout(size_hint_y=None, height=_U.get("zone_h", 900))
         self._zone = zone
         self._ring = TickRing()
         zone.add_widget(self._ring)
@@ -1060,7 +1062,7 @@ class TimerScreen(Screen):
         content.add_widget(sec)
         self.banner = StatusBanner()
         content.add_widget(self.banner)
-        self._bottom_spacer = Widget(size_hint_y=1)
+        self._bottom_spacer = Widget(size_hint_y=None, height=0)
         content.add_widget(self._bottom_spacer)
         nav = BoxLayout(orientation="horizontal", size_hint_y=None,
                         height=_U.get("nav_h", 72) + 8, spacing=4)
@@ -1091,9 +1093,13 @@ class TimerScreen(Screen):
             init_ui()
         except Exception:
             return
-        self._apply_sizes()
+        try:
+            win_h = float(_size[1]) if _size else 0.0
+        except Exception:
+            win_h = 0.0
+        self._apply_sizes(win_h or None)
 
-    def _apply_sizes(self) -> None:
+    def _apply_sizes(self, win_h=None) -> None:
         try:
             self._task_title.font_size = _U.get("timer_task_font", 34)
             self._task_stats.font_size = _U.get("timer_prog_font", 22)
@@ -1109,20 +1115,25 @@ class TimerScreen(Screen):
                 b.font_size = _U.get("nav_font", 30)
         except Exception:
             pass
-        # Center the clock: top gap puts the ring middle at 50% height,
-        # bottom spacer takes whatever is left (clamped at zero).
+        # Center the clock with fixed-height spacers (never stretch
+        # weights: those desync across Kivy's deferred layout passes).
+        # The gaps always sum to exactly the free space, so the column
+        # fits the window and the ring middle lands at 50% height.
         try:
-            h = float(Window.height or 0)
+            h = float(win_h or Window.height or 0)
             card = _U.get("card_h", 112)
             zone = _U.get("zone_h", 900)
             pill = _U.get("pill_h", 96)
             nav = _U.get("nav_h", 72) + 8
-            fixed = card + zone + 30 + 30 + pill + 56 + nav + 62
+            below = 30 + 30 + pill + 56 + nav
+            chrome = 20 + 54  # vertical padding + 9 gaps of spacing 6
             top_gap = 0.5 * h - zone / 2 - card
-            top_gap = max(0.0, top_gap)
-            bottom_gap = max(0.0, h - fixed - top_gap)
-            self._top_spacer.size_hint_y = top_gap
-            self._bottom_spacer.size_hint_y = bottom_gap
+            bottom_gap = h - chrome - (card + top_gap + zone + below)
+            if bottom_gap < 0:
+                top_gap = max(0.0, top_gap + bottom_gap)
+                bottom_gap = 0.0
+            self._top_spacer.height = max(0.0, top_gap)
+            self._bottom_spacer.height = max(0.0, bottom_gap)
         except Exception:
             pass
 
@@ -1334,7 +1345,7 @@ class StatsScreen(Screen):
         refresh.bind(on_release=lambda _b: self.refresh())
         top.add_widget(refresh)
         root.add_widget(top)
-        stats_wrap = FloatLayout()
+        stats_wrap = RelativeLayout()
         scroll = ScrollView(bar_width=8, bar_color=(0, 0, 0, 0),
                             bar_inactive_color=(0, 0, 0, 0),
                             scroll_type=["content"])
@@ -1479,6 +1490,10 @@ class SettingsScreen(Screen):
                             size_hint_y=None, height=_U.get("setup_btn_h", 72))
         save.bind(on_release=lambda _b: self._save())
         root.add_widget(save)
+        self._version = Label(text=f"App v{_APP_VERSION}", halign="center",
+                              font_size=_U.get("stat_cap", 34), color=_DIM,
+                              size_hint_y=None, height=44)
+        root.add_widget(self._version)
         self.add_widget(root)
 
     def on_pre_enter(self):
