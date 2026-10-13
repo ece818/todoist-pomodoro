@@ -20,7 +20,7 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.graphics import Color, RoundedRectangle
-from kivy.properties import NumericProperty
+from kivy.properties import ListProperty, NumericProperty, StringProperty
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
@@ -114,6 +114,8 @@ def compute_ui(w, h):
         "filter_font": max(32.0, top_h * 0.40),
         "nav_h": nav_h,
         "nav_font": min(max(38.0, nav_h * 0.48), w * 0.065),
+        "nav_icon": max(52.0, h * 0.024),
+        "nav_cap": max(26.0, h * 0.011),
         "status_font": status_font,
         "status_h": max(56.0, status_font + 10),
         "banner_font": max(32.0, h * 0.014),
@@ -261,15 +263,111 @@ def _flat_button(label, font_size, bg=_BTN, fg=_FG, radius=18, **kwargs):
     return b
 
 
+class HintEntry(RelativeLayout):
+    """TextInput with an explicit Label hint overlay.
+
+    Kivy's native hint_text renderer silently produces blank textures
+    on-device (its label factory swallows render errors), while plain
+    Labels render everywhere — so the hint is a real Label, visible
+    exactly when the field is empty. Same call surface as TextInput
+    for everything callers use (.text, .password, .font_size,
+    bind(text=) / bind(on_text_validate=)).
+    """
+
+    def __init__(self, hint, font_size, radius=14, **kwargs):
+        super().__init__(**kwargs)
+        self._entry = TextInput(hint_text="", multiline=False,
+                                font_size=font_size,
+                                background_normal="", background_active="",
+                                background_color=(0, 0, 0, 0),
+                                foreground_color=_FG,
+                                cursor_color=_ACCENT,
+                                padding=[16, 12])
+        _paint_bg(self._entry, (0.10, 0.10, 0.14, 1), radius=radius)
+        self._hint_label = Label(text=hint, color=_DIM,
+                                 font_size=font_size,
+                                 halign="left", valign="middle",
+                                 size_hint=(None, None))
+        self._hint_label.bind(size=self._hint_label.setter("text_size"))
+        # Mirror of the typed text in label white: the TextInput's own
+        # text texture draws near-black on-device (same swallowed-error
+        # path as hints), while plain Labels render everywhere.
+        # Long overflow clips instead of scrolling (fields are short).
+        self._mirror = Label(text="", color=_FG,
+                             font_size=font_size,
+                             halign="left", valign="middle",
+                             size_hint=(None, None))
+        self._mirror.bind(size=self._mirror.setter("text_size"))
+        self.add_widget(self._entry)
+        self.add_widget(self._hint_label)
+        self.add_widget(self._mirror)
+        self._entry.bind(text=lambda *_a: self._sync_hint())
+        self.bind(size=lambda *_a: self._fit_hint(),
+                  pos=lambda *_a: self._fit_hint())
+        self._fit_hint()
+        self._sync_hint()
+
+    def _fit_hint(self, *_args):
+        try:
+            for overlay in (self._hint_label, self._mirror):
+                overlay.pos = (16, 0)
+                overlay.size = (max(0, self.width - 32),
+                                max(0, self.height))
+        except Exception:
+            pass
+
+    def _sync_hint(self, *_args):
+        try:
+            has_text = bool(self._entry.text)
+            if self._entry.password:
+                shown = "•" * len(self._entry.text)
+            else:
+                shown = self._entry.text
+            self._mirror.text = shown
+            self._mirror.opacity = 1 if has_text else 0
+            self._hint_label.opacity = 0 if has_text else 1
+        except Exception:
+            pass
+
+    @property
+    def text(self):
+        return self._entry.text
+
+    @text.setter
+    def text(self, value):
+        self._entry.text = value
+
+    @property
+    def password(self):
+        return self._entry.password
+
+    @password.setter
+    def password(self, value):
+        self._entry.password = value
+
+    @property
+    def font_size(self):
+        return self._entry.font_size
+
+    @font_size.setter
+    def font_size(self, value):
+        self._entry.font_size = value
+        try:
+            self._hint_label.font_size = value
+            self._mirror.font_size = value
+        except Exception:
+            pass
+
+    def bind(self, **kwargs):
+        for key in ("text", "on_text_validate"):
+            if key in kwargs:
+                self._entry.bind(**{key: kwargs.pop(key)})
+        return super().bind(**kwargs)
+
+
 def _dark_entry(hint, font_size, radius=14, **kwargs):
-    """TextInput in theme colors with a rounded background."""
-    t = TextInput(hint_text=hint, multiline=False, font_size=font_size,
-                  background_normal="", background_active="",
-                  background_color=(0, 0, 0, 0),
-                  foreground_color=_FG, hint_text_color=_DIM,
-                  cursor_color=_ACCENT, padding=[16, 12], **kwargs)
-    _paint_bg(t, (0.10, 0.10, 0.14, 1), radius=radius)
-    return t
+    """Themed text field with a guaranteed-visible hint overlay."""
+    return HintEntry(hint, font_size, radius=radius, **kwargs)
 
 
 def _paste_into(entry, status=None, action="Connect") -> bool:
@@ -726,14 +824,12 @@ class TodayScreen(Screen):
         top.add_widget(self._refresh_btn)
         root.add_widget(top)
 
-        nav = BoxLayout(orientation="horizontal", size_hint_y=None,
-                        height=_U.get("nav_h", 72) + 16, spacing=10)
-        self._nav_buttons: list = []
-        for label, screen in (("Timer", "timer"), ("Stats", "stats"), ("Settings", "settings")):
-            b = _flat_button(label, _U.get("nav_font", 30), fg=_ACCENT)
-            b.bind(on_release=lambda _b, s=screen: self._go(s))
-            self._nav_buttons.append(b)
-            nav.add_widget(b)
+        nav, self._nav_cells = _build_nav(
+            (("timer", "Timer", "timer"),
+             ("stats", "Stats", "stats"),
+             ("settings", "Settings", "settings")),
+            "", self._go)
+        self._nav_bar = nav
         root.add_widget(nav)
 
         self._status = Label(text="Loading…", bold=True, size_hint_y=None,
@@ -786,8 +882,9 @@ class TodayScreen(Screen):
             self._title.font_size = _U.get("title_font", 30)
             self._filter.font_size = _U.get("filter_font", 20)
             self._refresh_btn.font_size = _U.get("btn_font", 28)
-            for b in self._nav_buttons:
-                b.font_size = _U.get("nav_font", 30)
+            for cell in self._nav_cells:
+                cell.refresh_sizes()
+            self._nav_bar.height = _nav_bar_h()
             self._status.font_size = _U.get("status_font", 34)
             self._add_entry.font_size = _U.get("add_font", 20)
             self._add_btn.font_size = _U.get("add_font", 20)
@@ -1088,6 +1185,133 @@ class CircleCheck(ButtonBehavior, Widget):
             pass
 
 
+def _nav_bar_h():
+    """Bottom icon-bar height: icon + caption + cell padding/spacing."""
+    return _U.get("nav_icon", 56) + _U.get("nav_cap", 26) + 14
+
+
+class NavIcon(Widget):
+    """Procedural line icon (house/clock/bars/sliders), inspo style.
+
+    Canvas-drawn so it never depends on device-font glyphs (which
+    render some symbols as tofu boxes — see _display).
+    """
+
+    kind = StringProperty("today")
+    icon_color = ListProperty([1, 1, 1, 1])
+
+    def __init__(self, kind="today", **kwargs):
+        kwargs.setdefault("size_hint", (None, None))
+        super().__init__(**kwargs)
+        self.kind = kind
+        d = _U.get("nav_icon", 56)
+        self.size = (d, d)
+        self.bind(pos=lambda *_a: self._redraw(),
+                  size=lambda *_a: self._redraw(),
+                  kind=lambda *_a: self._redraw(),
+                  icon_color=lambda *_a: self._redraw())
+        self._redraw()
+
+    def _redraw(self, *_args):
+        try:
+            from kivy.graphics import Color, Line
+            d = min(float(self.width), float(self.height))
+            if d <= 0:
+                return
+            self.canvas.clear()
+            x, y = float(self.x), float(self.y)
+            w, h = float(self.width), float(self.height)
+            p = d * 0.14
+            lw = max(3.0, d * 0.055)
+            cx, cy = x + w / 2, y + h / 2
+            r = d / 2 - p
+            kind = self.kind
+            with self.canvas:
+                Color(*self.icon_color)
+                if kind == "today":
+                    Line(points=[x + p, y + h * 0.44,
+                                 cx, y + h - p,
+                                 x + w - p, y + h * 0.44,
+                                 x + w - p, y + p,
+                                 x + p, y + p,
+                                 x + p, y + h * 0.44],
+                         width=lw, joint="round", cap="round")
+                elif kind == "timer":
+                    Line(circle=(cx, cy, r), width=lw)
+                    Line(points=[cx, cy, cx, cy + r * 0.55],
+                         width=lw, cap="round")
+                    Line(points=[cx, cy, cx + r * 0.45, cy + r * 0.2],
+                         width=lw, cap="round")
+                elif kind == "stats":
+                    base = y + p
+                    for i, frac in enumerate((0.42, 0.72, 0.55)):
+                        bx = x + w * (0.28 + 0.22 * i)
+                        Line(points=[bx, base, bx, base + (h - 2 * p) * frac],
+                             width=lw, cap="round")
+                else:  # settings sliders
+                    for i, kfrac in enumerate((0.30, 0.62, 0.42)):
+                        ly = y + h * (0.28 + 0.22 * i)
+                        Line(points=[x + p, ly, x + w - p, ly],
+                             width=lw, cap="round")
+                        kx = x + p + (w - 2 * p) * kfrac
+                        Line(circle=(kx, ly, lw * 1.1), width=lw)
+        except Exception:
+            pass
+
+
+class NavCell(ButtonBehavior, BoxLayout):
+    """One bottom-nav cell: icon over caption, no background (inspo)."""
+
+    def __init__(self, kind, label, active=False, **kwargs):
+        super().__init__(orientation="vertical", spacing=2, padding=(4, 6),
+                         **kwargs)
+        wrap = AnchorLayout(anchor_x="center", anchor_y="center",
+                            size_hint_y=None,
+                            height=_U.get("nav_icon", 56))
+        self._wrap = wrap
+        self.icon = NavIcon(kind=kind)
+        self._cap = Label(text=label, halign="center", valign="middle",
+                          size_hint_y=None,
+                          height=_U.get("nav_cap", 26))
+        self._cap.bind(size=self._cap.setter("text_size"))
+        wrap.add_widget(self.icon)
+        self.add_widget(wrap)
+        self.add_widget(self._cap)
+        self._active = active
+        self.refresh_sizes()
+
+    def refresh_sizes(self):
+        try:
+            d = _U.get("nav_icon", 56)
+            self.icon.size = (d, d)
+            self._wrap.height = d
+            self._cap.font_size = _U.get("nav_cap", 26)
+            self._cap.height = _U.get("nav_cap", 26)
+            if self._active:
+                self.icon.icon_color = list(_WHITE)
+                self._cap.color = _WHITE
+                self._cap.bold = True
+            else:
+                self.icon.icon_color = list(_NAV_IDLE)
+                self._cap.color = _NAV_IDLE
+                self._cap.bold = False
+        except Exception:
+            pass
+
+
+def _build_nav(items, active, on_go):
+    """Bottom icon bar from (kind, label, screen) items; returns (row, cells)."""
+    nav = BoxLayout(orientation="horizontal", size_hint_y=None,
+                    height=_nav_bar_h(), spacing=4)
+    cells = []
+    for kind, label, screen in items:
+        cell = NavCell(kind, label, active=(screen == active))
+        cell.bind(on_release=lambda _i, s=screen: on_go(s))
+        cells.append(cell)
+        nav.add_widget(cell)
+    return nav, cells
+
+
 class TimerScreen(Screen):
     _FG = (0.90, 0.91, 0.97, 1)
     _DIM = (0.65, 0.68, 0.78, 1)
@@ -1192,21 +1416,14 @@ class TimerScreen(Screen):
         content.add_widget(self.banner)
         self._bottom_spacer = Widget(size_hint_y=None, height=0)
         content.add_widget(self._bottom_spacer)
-        nav = BoxLayout(orientation="horizontal", size_hint_y=None,
-                        height=_U.get("nav_h", 72) + 16, spacing=4)
-        self._nav_btns: dict = {}
-        for label, screen in (("Today", "today"), ("Timer", "timer"),
-                              ("Stats", "stats"), ("Settings", "settings")):
-            active = (label == "Timer")
-            b = Button(
-                text=label, font_size=_U.get("nav_font", 30),
-                bold=active, background_normal="", background_down="",
-                background_color=(0, 0, 0, 0),
-                color=_WHITE if active else _NAV_IDLE)
-            b.bind(on_release=lambda _b, s=screen: setattr(self.manager,
-                                                           "current", s))
-            self._nav_btns[label] = b
-            nav.add_widget(b)
+        nav, self._nav_cells = _build_nav(
+            (("today", "Today", "today"),
+             ("timer", "Timer", "timer"),
+             ("stats", "Stats", "stats"),
+             ("settings", "Settings", "settings")),
+            "timer",
+            lambda s: setattr(self.manager, "current", s))
+        self._nav_bar = nav
         content.add_widget(nav)
         root.add_widget(content)
         self.add_widget(root)
@@ -1241,8 +1458,9 @@ class TimerScreen(Screen):
             self._pill.height = _U.get("pill_h", 96)
             self._reset_link.font_size = _U.get("ghost_font", 26)
             self._done_link.font_size = _U.get("ghost_font", 26)
-            for b in self._nav_btns.values():
-                b.font_size = _U.get("nav_font", 30)
+            for cell in self._nav_cells:
+                cell.refresh_sizes()
+            self._nav_bar.height = _nav_bar_h()
         except Exception:
             pass
         # Center the clock with fixed-height spacers (never stretch
@@ -1254,7 +1472,7 @@ class TimerScreen(Screen):
             card = _U.get("card_h", 112)
             zone = _U.get("zone_h", 900)
             pill = _U.get("pill_h", 96)
-            nav = _U.get("nav_h", 72) + 16
+            nav = _nav_bar_h()
             below = (_U.get("timer_prog_h", 42)
                      + _U.get("timer_state_h", 42) + pill + 88 + nav)
             chrome = 20 + 60 + 16  # padding + 10 gaps of 6 + ring gap
