@@ -71,6 +71,8 @@ cd android && buildozer android debug  # 15-30 min cold; downloads SDK/NDK/p4a/G
 
 Keep the caches on the machine: `~/.buildozer/`, `android/.buildozer/`, `~/.gradle/`, pip wheel cache. Do not delete them to "save space" — that forces another cold build.
 
+Signing identity: debug APKs are signed with `~/.android/debug.keystore`, auto-created on first build. Android refuses to update an installed app when the signer differs, so a new machine's key breaks updates — carry this single file between machines (copy it directly like the APK, never commit it) and place it at `~/.android/debug.keystore` before the first build there.
+
 ## 6. Notes / gotchas
 
 - `android/bin/*.apk` and `.buildozer/` are gitignored — APKs never transfer via git. Rebuild or copy the single APK file directly.
