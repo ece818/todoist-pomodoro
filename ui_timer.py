@@ -17,6 +17,11 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import Gio, Gdk, GLib, Gtk
 
+try:
+    import cairo  # noqa: F401 -- lets Gtk marshal DrawingArea contexts
+except ImportError:  # pragma: no cover -- night art degrades to flat bg
+    pass
+
 from ui_common import add_close_shortcuts
 
 
@@ -474,6 +479,7 @@ class TimerView(Gtk.Box):
         check.add_css_class("focus-check")
         check.set_tooltip_text("Complete this task in Todoist")
         check.set_valign(Gtk.Align.CENTER)
+        check.set_size_request(46, 46)
         check.connect("clicked", self._on_mark_done_clicked)
         card.append(check)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)

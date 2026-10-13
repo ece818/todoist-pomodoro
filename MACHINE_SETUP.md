@@ -22,7 +22,7 @@ pip install buildozer             # only if building the APK on this machine
 Desktop app only (skip on headless build machines):
 
 ```bash
-sudo apt install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+sudo apt install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-cairo python3-gi-cairo
 ```
 
 Android builds require JDK 17 (not newer) plus python-for-android build tools

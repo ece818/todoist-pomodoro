@@ -135,6 +135,7 @@ class PaletteWindow(Gtk.Window):
 
             save_button = Gtk.Button(label="Save")
             save_button.set_tooltip_text("Save current search as a named filter")
+            save_button.add_css_class("suggested-action")
             save_button.connect("clicked", self._on_save_filter)
             filter_row.append(save_button)
 
@@ -146,6 +147,7 @@ class PaletteWindow(Gtk.Window):
 
         self._search = Gtk.SearchEntry()
         self._search.set_placeholder_text("Type to search tasks…")
+        self._search.add_css_class("focus-entry")
         self._search.connect("search-changed", self._on_query_changed)
         key_ctl = Gtk.EventControllerKey()
         key_ctl.connect("key-pressed", self._on_key_pressed)
@@ -631,6 +633,7 @@ class PaletteWindow(Gtk.Window):
     def _append_result_row(self, task) -> None:
         row = Gtk.ListBoxRow()
         row.set_activatable(True)
+        row.add_css_class("focus-row")
         row._task = task  # type: ignore[attr-defined]
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         box.set_margin_top(6)
@@ -639,6 +642,7 @@ class PaletteWindow(Gtk.Window):
         box.set_margin_end(8)
 
         content = Gtk.Label(label=getattr(task, "content", ""))
+        content.add_css_class("focus-row-label")
         content.set_xalign(0.0)
         content.set_hexpand(True)
         content.set_wrap(True)
@@ -655,8 +659,10 @@ class PaletteWindow(Gtk.Window):
             meta_label = Gtk.Label(label=meta)
             if _is_overdue(task):
                 meta_label.add_css_class("error")
+                meta_label.add_css_class("focus-meta")
             else:
                 meta_label.add_css_class("dim-label")
+                meta_label.add_css_class("focus-meta")
             box.append(meta_label)
 
         row.set_child(box)

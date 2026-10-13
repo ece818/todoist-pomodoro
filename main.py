@@ -35,6 +35,7 @@ from sessions import SessionStore
 from sync import FilterStore, SyncStore
 from todoist import TodoistAuthError, TodoistClient, TodoistError
 from ui_common import add_close_shortcuts
+from ui_theme import apply_focus_theme
 
 try:
     # Implemented by the backend agent; absent until it lands.
@@ -80,6 +81,16 @@ class PomodoroApp(Adw.Application):
         self._actions = None
 
     def do_activate(self) -> None:
+        try:
+            apply_focus_theme()
+        except Exception:
+            pass
+        try:
+            Adw.StyleManager.get_default().set_color_scheme(
+                Adw.ColorScheme.FORCE_DARK
+            )
+        except Exception:
+            pass
         win = Adw.ApplicationWindow(application=self)
         win.set_title("Todoist Pomodoro")
         win.set_default_size(640, 720)
@@ -113,11 +124,13 @@ class PomodoroApp(Adw.Application):
         self._timer_view.set_on_navigate(self._show)
 
         timer_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        timer_page.add_css_class("focus-page")
         timer_page.append(self._timer_view)
         self._stack.add_titled(timer_page, "timer", "Timer")
 
         if self._session_store is not None:
             stats_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+            stats_page.add_css_class("focus-page")
             stats_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             stats_bar.set_margin_top(8)
             stats_bar.set_margin_start(8)

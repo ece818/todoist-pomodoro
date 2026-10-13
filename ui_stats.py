@@ -31,6 +31,7 @@ class StatsPanel(Gtk.Box):
         project_name: Optional[Callable[[str], None]] = None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.add_css_class("focus-page")
         self._sessions = session_store
         self._project_name = project_name
 
@@ -47,6 +48,8 @@ class StatsPanel(Gtk.Box):
         toolbar.append(title)
         refresh_button = Gtk.Button(label="Refresh")
         refresh_button.set_tooltip_text("Reload stats from session log")
+        refresh_button.add_css_class("suggested-action")
+        refresh_button.add_css_class("focus-big")
         refresh_button.connect("clicked", self._on_refresh_clicked)
         toolbar.append(refresh_button)
         self.append(toolbar)
@@ -131,18 +134,21 @@ class StatsPanel(Gtk.Box):
         row = Gtk.ListBoxRow()
         row.set_activatable(False)
         row.set_selectable(False)
+        row.add_css_class("focus-row")
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         box.set_margin_top(4)
         box.set_margin_bottom(4)
         box.set_margin_start(8)
         box.set_margin_end(8)
         name_label = Gtk.Label(label=name)
+        name_label.add_css_class("focus-row-label")
         name_label.set_xalign(0.0)
         name_label.set_hexpand(True)
         name_label.set_wrap(True)
         box.append(name_label)
         value_label = Gtk.Label(label=value)
         value_label.add_css_class("dim-label")
+        value_label.add_css_class("focus-value")
         box.append(value_label)
         row.set_child(box)
         self._list.append(row)

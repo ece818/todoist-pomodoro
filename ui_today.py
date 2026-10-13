@@ -87,6 +87,7 @@ class TodayPanel(Gtk.Box):
         on_mark_done: Optional[Callable[[Task], None]] = None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.add_css_class("focus-page")
         self._store = store
         self._on_task_selected = on_task_selected
         self._actions = actions
@@ -114,6 +115,7 @@ class TodayPanel(Gtk.Box):
         # Client-side filter: substring match on loaded rows only, no network.
         self._search = Gtk.SearchEntry()
         self._search.set_placeholder_text("Filter tasks…")
+        self._search.add_css_class("focus-entry")
         self._search.connect("search-changed", self._on_filter_changed)
         self.append(self._search)
 
@@ -128,6 +130,8 @@ class TodayPanel(Gtk.Box):
         toolbar.append(self._project_dropdown)
         self._refresh_button = Gtk.Button(label="Refresh")
         self._refresh_button.set_tooltip_text("Reload tasks from Todoist")
+        self._refresh_button.add_css_class("suggested-action")
+        self._refresh_button.add_css_class("focus-big")
         self._refresh_button.connect("clicked", self._on_refresh_clicked)
         toolbar.append(self._refresh_button)
         self.append(toolbar)
@@ -147,6 +151,7 @@ class TodayPanel(Gtk.Box):
         scrolled.set_child(self._list)
 
         self._status = Gtk.Label(label="")
+        self._status.add_css_class("dim-label")
         self._status.set_xalign(0.0)
         self._status.set_wrap(True)
         self.append(self._status)
@@ -154,10 +159,13 @@ class TodayPanel(Gtk.Box):
         add_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self._entry = Gtk.Entry()
         self._entry.set_placeholder_text("Try 'Call mom Mon 2pm…'")
+        self._entry.add_css_class("focus-entry")
         self._entry.set_hexpand(True)
         self._entry.connect("activate", self._on_add_activated)
         add_box.append(self._entry)
         self._add_button = Gtk.Button(label="Add")
+        self._add_button.add_css_class("suggested-action")
+        self._add_button.add_css_class("focus-big")
         self._add_button.connect("clicked", self._on_add_clicked)
         add_box.append(self._add_button)
         self.append(add_box)
@@ -673,6 +681,7 @@ class TodayPanel(Gtk.Box):
     def _append_task_row(self, task: Task) -> None:
         row = Gtk.ListBoxRow()
         row.set_activatable(True)
+        row.add_css_class("focus-row")
         row._task = task  # type: ignore[attr-defined]
         row.set_child(self._build_task_box(task))
         if self._actions is not None:
@@ -695,6 +704,7 @@ class TodayPanel(Gtk.Box):
         box.set_margin_end(8)
 
         check = Gtk.CheckButton()
+        check.add_css_class("focus-check")
         try:
             short = str(task.content or "").strip()
             if len(short) > 60:
@@ -710,6 +720,7 @@ class TodayPanel(Gtk.Box):
         box.append(check)
 
         content = Gtk.Label(label=task.content)
+        content.add_css_class("focus-row-label")
         content.set_xalign(0.0)
         content.set_hexpand(True)
         content.set_wrap(True)
@@ -726,14 +737,17 @@ class TodayPanel(Gtk.Box):
             meta_label = Gtk.Label(label=meta)
             if _is_overdue(task):
                 meta_label.add_css_class("error")
+                meta_label.add_css_class("focus-meta")
             else:
                 meta_label.add_css_class("dim-label")
+                meta_label.add_css_class("focus-meta")
             box.append(meta_label)
         return box
 
     def _append_pending_row(self, content: str, message: str) -> None:
         row = Gtk.ListBoxRow()
         row.set_activatable(False)
+        row.add_css_class("focus-row")
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         box.set_margin_top(6)
         box.set_margin_bottom(6)
@@ -741,12 +755,14 @@ class TodayPanel(Gtk.Box):
         box.set_margin_end(8)
 
         label = Gtk.Label(label=f"{content} (pending — {message})")
+        label.add_css_class("focus-row-label")
         label.set_xalign(0.0)
         label.set_hexpand(True)
         label.set_wrap(True)
         box.append(label)
 
         retry = Gtk.Button(label="Retry")
+        retry.add_css_class("suggested-action")
         retry.connect("clicked", self._on_retry_clicked)
         box.append(retry)
 

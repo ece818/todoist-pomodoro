@@ -55,6 +55,7 @@ class SettingsDialog(Gtk.Dialog):
         area.append(token_label)
         self._token_entry = Gtk.Entry()
         self._token_entry.set_placeholder_text("Paste new token to switch accounts")
+        self._token_entry.add_css_class("focus-entry")
         self._token_entry.set_visibility(False)
         self._token_entry.set_activates_default(True)
         area.append(self._token_entry)
@@ -66,6 +67,9 @@ class SettingsDialog(Gtk.Dialog):
 
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         self.add_button("Save", Gtk.ResponseType.OK)
+        save_button = self.get_widget_for_response(Gtk.ResponseType.OK)
+        if save_button is not None:
+            save_button.add_css_class("suggested-action")
         self.set_default_response(Gtk.ResponseType.OK)
         self.connect("response", self._on_response)
 
