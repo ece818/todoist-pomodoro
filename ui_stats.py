@@ -54,10 +54,12 @@ class StatsPanel(Gtk.Box):
         toolbar.append(refresh_button)
         self.append(toolbar)
 
-        self._summary = Gtk.Label(label="")
-        self._summary.set_xalign(0.0)
-        self._summary.set_wrap(True)
-        self.append(self._summary)
+        hero = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        hero.set_homogeneous(True)
+        self._today_value = self._hero_card(hero, "Today", "focus-hero-blue")
+        self._week_value = self._hero_card(hero, "7 days", "focus-hero-green")
+        self._streak_value = self._hero_card(hero, "Streak", "focus-hero-white")
+        self.append(hero)
 
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
@@ -76,15 +78,38 @@ class StatsPanel(Gtk.Box):
         try:
             data = self._sessions.stats()
         except Exception:
-            self._summary.set_text("Could not read the session log.")
+            for label in (
+                self._today_value,
+                self._week_value,
+                self._streak_value,
+            ):
+                label.set_text("–")
             return
-        lines = [
-            f"Today: {format_duration(data['today_sec'])}",
-            f"Last 7 days: {format_duration(data['week_sec'])}",
-            f"Day streak: {data['streak']}",
-        ]
-        self._summary.set_text("\n".join(lines))
+        self._today_value.set_text(format_duration(data["today_sec"]))
+        self._week_value.set_text(format_duration(data["week_sec"]))
+        self._streak_value.set_text(str(data["streak"]))
         self._rebuild(data)
+
+    # -- internals ---------------------------------------------------
+
+    @staticmethod
+    def _hero_card(parent: Gtk.Box, caption: str, value_class: str) -> Gtk.Label:
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        card.add_css_class("focus-card")
+        card.set_margin_top(12)
+        card.set_margin_bottom(12)
+        card.set_margin_start(12)
+        card.set_margin_end(12)
+        value = Gtk.Label(label="–")
+        value.add_css_class(value_class)
+        value.set_xalign(0.5)
+        caption_label = Gtk.Label(label=caption)
+        caption_label.add_css_class("focus-meta")
+        caption_label.set_xalign(0.5)
+        card.append(value)
+        card.append(caption_label)
+        parent.append(card)
+        return value
 
     # -- internals ---------------------------------------------------
 

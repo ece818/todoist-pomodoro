@@ -14,12 +14,20 @@ from typing import Callable, Optional
 import gi
 
 gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
 
 from gi.repository import Gio, Gdk, GLib, Gtk
 
 try:
     import cairo  # noqa: F401 -- lets Gtk marshal DrawingArea contexts
-except ImportError:  # pragma: no cover -- night art degrades to flat bg
+    import gi as _gi
+
+    # Registers the cairo.Context <-> GObject foreign struct converter.
+    # Without this (and the python3-gi-cairo system package),
+    # Gtk.DrawingArea.set_draw_func fails with:
+    # "Couldn't find foreign struct converter for 'cairo.Context'".
+    _gi.require_foreign("cairo", "Context")
+except (ImportError, ValueError):  # pragma: no cover -- night art degrades to flat bg
     pass
 
 from ui_common import add_close_shortcuts
@@ -43,6 +51,7 @@ _TIMER_CSS = b"""
 .focus-task { font-size: 26px; font-weight: 700; color: #ffffff; }
 .focus-stats { font-size: 15px; font-weight: 600; color: #f88379; }
 .focus-dim { font-size: 14px; color: rgba(255,255,255,0.6); }
+.focus-status { font-size: 20px; font-weight: 600; color: rgba(255,255,255,0.85); }
 .focus-card { background: rgba(18, 18, 28, 0.88); border-radius: 18px; }
 .focus-pill { background: #ffffff; color: #14141e; border-radius: 999px; font-size: 20px; font-weight: 800; padding: 10px 44px; }
 .focus-ghost { color: rgba(255,255,255,0.7); }
@@ -155,10 +164,20 @@ class FocusNightBackdrop(Gtk.DrawingArea):
 
     def _draw(self, _area, ctx, w: int, h: int, _data) -> None:
         try:
-            bands = 28
-            for i in range(bands):
-                ctx.set_source_rgb(*_night_rgb((i + 0.5) / bands))
-                ctx.rectangle(0, h * i / bands, w, h / bands + 1)
+            if w <= 0 or h <= 0:
+                return
+            cairo_mod = globals().get("cairo")
+            if cairo_mod is not None:
+                # Smooth sky: one linear gradient, no band seams.
+                sky = cairo_mod.LinearGradient(0, 0, 0, h)
+                for pos, color in _NIGHT_STOPS:
+                    sky.add_color_stop_rgb(pos, *color)
+                ctx.set_source(sky)
+                ctx.rectangle(0, 0, w, h)
+                ctx.fill()
+            else:  # pragma: no cover -- no pycairo installed
+                ctx.set_source_rgb(0.015, 0.02, 0.08)
+                ctx.rectangle(0, 0, w, h)
                 ctx.fill()
             rng = random.Random(11)
             tints = ((1, 1, 1), (1, 1, 1), (1, 1, 1),
@@ -183,29 +202,46 @@ class FocusNightBackdrop(Gtk.DrawingArea):
                 s = 1 + rng.random()
                 ctx.rectangle(mx, my, s, s)
                 ctx.fill()
+            # Soft nebula washes: radial blobs fading to transparent,
+            # so no hard rectangle edges ever show.
+            if cairo_mod is not None:
+                for fx, fy, radius_frac, tint, alpha in (
+                        (0.30, 0.25, 0.45, (0.36, 0.26, 0.58), 0.10),
+                        (0.70, 0.32, 0.40, (0.20, 0.45, 0.55), 0.09),
+                        (0.48, 0.16, 0.38, (0.50, 0.30, 0.52), 0.08)):
+                    cx, cy = w * fx, h * fy
+                    radius = max(w, h) * radius_frac
+                    glow = cairo_mod.RadialGradient(cx, cy, 0, cx, cy, radius)
+                    glow.add_color_stop_rgba(
+                        0, tint[0], tint[1], tint[2], alpha)
+                    glow.add_color_stop_rgba(
+                        1, tint[0], tint[1], tint[2], 0)
+                    ctx.set_source(glow)
+                    ctx.arc(cx, cy, radius, 0, 2 * math.pi)
+                    ctx.fill()
             # Shooting star with a fading tail.
             hx, hy = w * 0.70, h * 0.14
             tx, ty = w * 0.56, h * 0.21
+            ctx.set_line_cap(1)  # round caps, no blunt ends
             for frac, alpha in ((1.0, 0.9), (0.6, 0.45), (0.3, 0.2)):
                 ctx.set_source_rgba(1, 1, 1, alpha)
                 ctx.set_line_width(2.5)
                 ctx.move_to(hx, hy)
                 ctx.line_to(hx + (tx - hx) * frac, hy + (ty - hy) * frac)
                 ctx.stroke()
-            ctx.set_source_rgba(0.90, 0.92, 1, 0.10)
-            ctx.arc(w * 0.78, h * 0.30, 60, 0, 2 * math.pi)
-            ctx.fill()
+            # Moon + halo: radial fade, no hard disc edge.
+            mx, my = w * 0.78, h * 0.30
+            if cairo_mod is not None:
+                halo = cairo_mod.RadialGradient(mx, my, 0, mx, my, 60)
+                halo.add_color_stop_rgba(0, 0.90, 0.92, 1.0, 0.10)
+                halo.add_color_stop_rgba(1, 0.90, 0.92, 1.0, 0)
+                ctx.set_source(halo)
+                ctx.arc(mx, my, 60, 0, 2 * math.pi)
+                ctx.fill()
             ctx.set_source_rgba(0.95, 0.96, 1, 0.9)
-            ctx.arc(w * 0.78, h * 0.30, 8, 0, 2 * math.pi)
+            ctx.arc(mx, my, 8, 0, 2 * math.pi)
             ctx.fill()
             horizon = h * 0.66
-            for (fx, fy, fw, fh, tint, alpha) in (
-                    (0.02, 0.10, 0.65, 0.30, (0.36, 0.26, 0.58), 0.07),
-                    (0.45, 0.22, 0.60, 0.26, (0.20, 0.45, 0.55), 0.06),
-                    (0.20, 0.06, 0.55, 0.20, (0.50, 0.30, 0.52), 0.05)):
-                ctx.set_source_rgba(tint[0], tint[1], tint[2], alpha)
-                ctx.rectangle(w * fx, h * fy, w * fw, h * fh)
-                ctx.fill()
             for base, color, phase in (
                     (horizon, (0.07, 0.07, 0.15), 0.0),
                     (horizon - h * 0.02, (0.02, 0.02, 0.05), 100.0)):
@@ -467,7 +503,14 @@ class TimerView(Gtk.Box):
         page.set_margin_bottom(12)
         page.set_margin_start(16)
         page.set_margin_end(16)
-        overlay.add_overlay(page)
+        # The column (card + 440px ring + controls + nav) is taller than
+        # small windows: scroll instead of clipping the bottom buttons.
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_hexpand(True)
+        scroll.set_vexpand(True)
+        scroll.set_child(page)
+        overlay.add_overlay(scroll)
 
         card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         card.add_css_class("focus-card")
@@ -518,7 +561,7 @@ class TimerView(Gtk.Box):
         center.set_vexpand(False)
         center.set_valign(Gtk.Align.START)
         ring_overlay = Gtk.Overlay()
-        self._ring = FocusTickRing(size=360)
+        self._ring = FocusTickRing(size=440)
         ring_overlay.set_child(self._ring)
         self._clock_label = Gtk.Label(label=_format_seconds(self._remaining))
         self._clock_label.add_css_class("focus-clock")
@@ -529,12 +572,12 @@ class TimerView(Gtk.Box):
         page.append(center)
 
         self._progress_label = Gtk.Label(label="")
-        self._progress_label.add_css_class("focus-dim")
+        self._progress_label.add_css_class("focus-status")
         self._progress_label.set_xalign(0.5)
         page.append(self._progress_label)
 
         self._state_label = Gtk.Label(label="Ready")
-        self._state_label.add_css_class("focus-dim")
+        self._state_label.add_css_class("focus-status")
         self._state_label.set_xalign(0.5)
         page.append(self._state_label)
 

@@ -630,9 +630,23 @@ class TodayPanel(Gtk.Box):
                 self._list.remove(row)
             except Exception:
                 pass
+            self._unselect_if_removed(row)
             return True
         except Exception:
             return False
+
+    def _unselect_if_removed(self, row) -> None:
+        """Drop the highlight when the selected row was just removed.
+
+        GTK moves selection onto a neighbor after a removal, so without
+        this the next task's bubble suddenly renders in the ``:selected``
+        tint — it looks like the row itself changed.
+        """
+        try:
+            if row is not None and self._list.get_selected_row() == row:
+                self._list.unselect_all()
+        except Exception:
+            pass
 
     def _on_complete_done(self, task_id) -> bool:
         row = self._rows.pop(str(task_id), None) if task_id is not None else None
@@ -641,6 +655,7 @@ class TodayPanel(Gtk.Box):
                 self._list.remove(row)
             except Exception:
                 pass
+            self._unselect_if_removed(row)
         self._set_status("Task completed.")
         return False
 
@@ -705,6 +720,9 @@ class TodayPanel(Gtk.Box):
 
         check = Gtk.CheckButton()
         check.add_css_class("focus-check")
+        # Never stretch with a multi-line label: a filled valign turns the
+        # ring into an oval on wrapped rows.
+        check.set_valign(Gtk.Align.CENTER)
         try:
             short = str(task.content or "").strip()
             if len(short) > 60:

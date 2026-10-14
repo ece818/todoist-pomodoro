@@ -231,6 +231,7 @@ class PomodoroApp(Adw.Application):
         win.add_controller(hotkey_controller)
 
         win.present()
+        win.maximize()
         if not self._has_token:
             # First run with no token anywhere: point at Settings now.
             GLib.idle_add(self._prompt_for_token)

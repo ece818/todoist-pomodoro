@@ -18,6 +18,9 @@ FOCUS_CSS: bytes = b"""
 .focus-value { font-size: 17px; font-weight: 700; color: #8ab4f8; }
 .focus-entry { font-size: 16px; padding: 10px 14px; border-radius: 12px; }
 .focus-hero { font-size: 42px; font-weight: 800; }
+.focus-hero-blue { font-size: 42px; font-weight: 800; color: #8ab4f8; }
+.focus-hero-green { font-size: 42px; font-weight: 800; color: #9ee6a0; }
+.focus-hero-white { font-size: 42px; font-weight: 800; color: #ffffff; }
 .focus-check { min-width: 44px; min-height: 44px; }
 button.focus-big { min-height: 48px; font-size: 17px; font-weight: 700; padding: 8px 22px; }
 list, viewport { background-color: transparent; }
